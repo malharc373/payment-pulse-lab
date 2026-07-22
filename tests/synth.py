@@ -11,8 +11,12 @@ DISTRICTS = {"karnataka": ["bengaluru urban", "mysuru"],
 N_QUARTERS = 14
 
 
-def build(db_path):
-    """Build a small but complete warehouse (all five tables) at ``db_path``."""
+def build(db_path, with_map: bool = True):
+    """Build a small warehouse at ``db_path``.
+
+    ``with_map=False`` mimics PULSE_LIGHT ingestion (aggregated tables only, no
+    map/top), so district-grain code paths must degrade gracefully.
+    """
     rows = {"agg_transaction": [], "agg_user": [], "map_transaction": [], "map_user": []}
     for state, base in STATES.items():
         amt = base
@@ -26,13 +30,14 @@ def build(db_path):
             rows["agg_user"].append({
                 "level": "state", "geo": state, "year": y, "quarter": q,
                 "registered_users": 5e6 * (i + 1), "app_opens": 5e7 * (i + 1)})
-            for d in DISTRICTS[state]:
-                rows["map_transaction"].append({
-                    "state": state, "district": d, "year": y, "quarter": q,
-                    "txn_count": amt / 3000, "txn_amount": amt / 2})
-                rows["map_user"].append({
-                    "state": state, "district": f"{d} district", "year": y, "quarter": q,
-                    "registered_users": 1e6 * (i + 1), "app_opens": 1e7 * (i + 1)})
+            if with_map:
+                for d in DISTRICTS[state]:
+                    rows["map_transaction"].append({
+                        "state": state, "district": d, "year": y, "quarter": q,
+                        "txn_count": amt / 3000, "txn_amount": amt / 2})
+                    rows["map_user"].append({
+                        "state": state, "district": f"{d} district", "year": y, "quarter": q,
+                        "registered_users": 1e6 * (i + 1), "app_opens": 1e7 * (i + 1)})
     # National rollup for KPI endpoints.
     for i in range(N_QUARTERS):
         y, q = 2020 + i // 4, i % 4 + 1

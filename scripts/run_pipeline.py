@@ -29,8 +29,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--min-year", type=int, default=config.MIN_YEAR)
     ap.add_argument("--max-year", type=int, default=config.MAX_YEAR)
     ap.add_argument(
-        "--datasets", nargs="+", default=["aggregated", "map", "top"],
+        "--datasets", nargs="+", default=list(config.DEFAULT_DATASETS),
         choices=["aggregated", "map", "top"],
+        help="dataset families to ingest (default respects PULSE_LIGHT)",
     )
     args = ap.parse_args(argv)
 

@@ -31,8 +31,22 @@ env vars to trade coverage for cold-start time.
 
 1. Push the repo to GitHub.
 2. share.streamlit.io → **New app** → main file `dashboard/app.py`.
-3. In **Advanced settings → Secrets/Env**, set `PULSE_AUTO_BUILD = "1"` (and
-   optionally `PULSE_MIN_YEAR` / `PULSE_MAX_YEAR`).
+3. In **Advanced settings → Secrets**, paste:
+
+   ```toml
+   PULSE_AUTO_BUILD = "1"
+   PULSE_LIGHT      = "1"          # free-tier friendly (see below)
+   PULSE_DB_PATH    = "/tmp/pulse.duckdb"
+   PULSE_MIN_YEAR   = "2022"
+   PULSE_MAX_YEAR   = "2024"
+   ```
+
+   **`PULSE_LIGHT=1`** ingests only the small `aggregated` tables (skips the large
+   `map`/`top` feeds) and disables the heavy district-grain forecast — cutting
+   memory and first-load time to fit the free tier's ~1 GB RAM. State and category
+   forecasts, the choropleth, anomalies and segments all still work; the district
+   forecast panel shows a note instead. Drop `PULSE_LIGHT` on a larger instance to
+   enable district-level forecasts.
 
 On first load the app builds the warehouse from the public Pulse dataset (cached
 for the session). `requirements.txt` is installed automatically.

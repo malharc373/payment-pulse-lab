@@ -54,3 +54,10 @@ USE_CACHE = os.getenv("PULSE_USE_CACHE", "1") not in ("0", "false", "False")
 # The three dataset families and the two entities we ingest for Day-1 scope.
 # (Insurance is available too and can be added the same way later.)
 ENTITIES = ("transaction", "user")
+
+# Light mode for memory-constrained hosts (e.g. Streamlit Cloud free tier):
+# ingest only the small `aggregated` tables (skip the large `map`/`top` feeds)
+# and disable the heavy district-grain forecast. State/category forecasts and the
+# state choropleth all run off `aggregated`, so the dashboard stays fully useful.
+LIGHT = os.getenv("PULSE_LIGHT", "0") not in ("0", "false", "False", "")
+DEFAULT_DATASETS = ("aggregated",) if LIGHT else ("aggregated", "map", "top")

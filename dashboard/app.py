@@ -242,11 +242,15 @@ with tab_forecast:
                      hide_index=True, width="stretch")
     with b:
         section("Districts", f"Top district forecasts · {fc['quarter']}", "Highest projected value.")
-        dist = pd.DataFrame(svc.forecast_districts(15)["rows"])
-        show = dist.assign(forecast_cr=lambda d: cr(d.forecast_champion).round(0),
-                           growth_pct=lambda d: d.growth_vs_last_pct.round(1))
-        st.dataframe(show[["state", "district", "forecast_cr", "growth_pct"]],
-                     hide_index=True, width="stretch")
+        if meta.get("districts_available"):
+            dist = pd.DataFrame(svc.forecast_districts(15)["rows"])
+            show = dist.assign(forecast_cr=lambda d: cr(d.forecast_champion).round(0),
+                               growth_pct=lambda d: d.growth_vs_last_pct.round(1))
+            st.dataframe(show[["state", "district", "forecast_cr", "growth_pct"]],
+                         hide_index=True, width="stretch")
+        else:
+            st.caption("District-grain forecasts are disabled in light mode "
+                       "(`PULSE_LIGHT=1`). Deploy with full ingestion to enable them.")
 
 # =============================================================================
 # MAP

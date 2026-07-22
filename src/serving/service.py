@@ -58,11 +58,14 @@ class InsightService:
             "SELECT MIN(year*10+quarter) lo, MAX(year*10+quarter) hi, "
             "COUNT(DISTINCT geo) states FROM agg_transaction WHERE level='state'"
         ).iloc[0]
+        n_districts = int(self._sql("SELECT COUNT(*) FROM map_transaction").iloc[0, 0])
         return {
             "warehouse": str(self.db_path),
             "first_quarter": period_label(int(df.lo)),
             "latest_quarter": period_label(int(df.hi)),
             "states": int(df.states),
+            "light": config.LIGHT,
+            "districts_available": n_districts > 0,
         }
 
     # -- descriptive analytics (live SQL) -----------------------------
@@ -171,10 +174,12 @@ class InsightService:
         Champion = seasonal_yoy (backtest winner); ridge shown alongside; interval
         from the champion's empirical log-residuals on the same grain.
         """
-        train = build_features(panel=panel)
-        fut = build_forecast_frame(panel=panel)
         empty_cols = ["entity", "period_key", "forecast_champion", "forecast_ridge",
                       "forecast_lo", "forecast_hi", "last_actual", "growth_vs_last_pct"]
+        if panel is None or panel.empty:
+            return pd.DataFrame(columns=empty_cols)
+        train = build_features(panel=panel)
+        fut = build_forecast_frame(panel=panel)
         if train.empty or fut.empty:
             return pd.DataFrame(columns=empty_cols)
         q_lo, q_hi = intervals.residual_log_quantiles(train)
