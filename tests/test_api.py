@@ -66,6 +66,29 @@ def test_map_states(client):
     assert len(body) == 2 and "yoy_pct" in body[0]
 
 
+def test_quarters_list(client):
+    qs = client.get("/quarters").json()
+    assert qs and {"year", "quarter", "period_key", "label"} <= set(qs[0])
+    # sorted oldest-first
+    assert qs == sorted(qs, key=lambda q: q["period_key"])
+
+
+def test_period_key_selects_historical_quarter(client):
+    qs = client.get("/quarters").json()
+    old_pk = qs[4]["period_key"]
+    latest = client.get("/kpis/top-states?n=1").json()[0]
+    historical = client.get(f"/kpis/top-states?n=1&period_key={old_pk}").json()[0]
+    # Both valid rows; the historical value differs from latest (series grows).
+    assert "txn_amount" in historical
+    assert historical["txn_amount"] != latest["txn_amount"]
+
+
+def test_category_mix_period_key(client):
+    qs = client.get("/quarters").json()
+    body = client.get(f"/kpis/category-mix?period_key={qs[3]['period_key']}").json()
+    assert abs(sum(c["pct_value"] for c in body) - 100.0) < 1e-6
+
+
 def test_state_detail_drilldown(client):
     body = client.get("/states/karnataka").json()
     assert body["state"] == "karnataka"

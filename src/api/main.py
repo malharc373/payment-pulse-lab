@@ -48,14 +48,19 @@ def national_trend():
     return svc().national_trend()
 
 
+@app.get("/quarters", tags=["analytics"])
+def quarters():
+    return svc().available_quarters()
+
+
 @app.get("/kpis/category-mix", tags=["analytics"])
-def category_mix():
-    return svc().category_mix()
+def category_mix(period_key: int | None = Query(None, description="e.g. 20234; default latest")):
+    return svc().category_mix(period_key)
 
 
 @app.get("/kpis/top-states", tags=["analytics"])
-def top_states(n: int = Query(10, ge=1, le=36)):
-    return svc().top_states(n)
+def top_states(n: int = Query(10, ge=1, le=36), period_key: int | None = None):
+    return svc().top_states(n, period_key)
 
 
 @app.get("/growth/leaders", tags=["growth"])
@@ -84,8 +89,8 @@ def forecast_districts(top: int = Query(30, ge=1, le=500), state: str | None = N
 
 
 @app.get("/map/states", tags=["analytics"])
-def map_states():
-    return svc().state_map_metrics()
+def map_states(period_key: int | None = Query(None, description="e.g. 20234; default latest")):
+    return svc().state_map_metrics(period_key)
 
 
 @app.get("/anomalies", tags=["anomalies"])

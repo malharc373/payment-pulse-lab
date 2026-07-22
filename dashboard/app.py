@@ -144,8 +144,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_overview, tab_forecast, tab_map, tab_explore, tab_signals = st.tabs(
-    ["Overview", "Forecasts", "Map", "Explore state", "Signals"]
+tab_overview, tab_quarter, tab_forecast, tab_map, tab_explore, tab_signals = st.tabs(
+    ["Overview", "By quarter", "Forecasts", "Map", "Explore state", "Signals"]
 )
 
 # =============================================================================
@@ -208,6 +208,69 @@ with tab_overview:
         st.altair_chart(base_chart(ch.properties(height=270)), width="stretch")
 
 # =============================================================================
+# BY QUARTER (time-travel)
+# =============================================================================
+with tab_quarter:
+    quarters = svc.available_quarters()
+    labels = [q["label"] for q in quarters]
+    sel = st.selectbox("Quarter", labels, index=len(labels) - 1)
+    pk = int(next(q["period_key"] for q in quarters if q["label"] == sel))
+
+    qtrend = pd.DataFrame(svc.national_trend())
+    qtrend["pk"] = qtrend.year * 10 + qtrend.quarter
+    row = qtrend[qtrend.pk == pk].iloc[0]
+    prior = qtrend[qtrend.pk < pk].tail(1)
+
+    section("Snapshot", f"Quarter {sel}",
+            "National totals and regional breakdown for the selected quarter.")
+    q1, q2, q3 = st.columns(3)
+    if not prior.empty:
+        p = prior.iloc[0]
+        q1.metric("Transaction value", f"Rs {cr(row.txn_amount)/1e5:,.1f}L cr",
+                  f"{100*(row.txn_amount/p.txn_amount-1):+.1f}% QoQ")
+        q2.metric("Transactions", f"{row.txn_count/1e9:,.1f} B",
+                  f"{100*(row.txn_count/p.txn_count-1):+.1f}% QoQ")
+    else:
+        q1.metric("Transaction value", f"Rs {cr(row.txn_amount)/1e5:,.1f}L cr")
+        q2.metric("Transactions", f"{row.txn_count/1e9:,.1f} B")
+    q3.metric("Avg ticket size", f"Rs {row.avg_ticket:,.0f}")
+
+    st.markdown("<hr/>", unsafe_allow_html=True)
+    qa, qb = st.columns(2)
+    with qa:
+        section("Leaders", f"Top states · {sel}", " ")
+        tops = pd.DataFrame(svc.top_states(10, period_key=pk)).assign(value_cr=lambda d: cr(d.txn_amount))
+        ch = alt.Chart(tops).mark_bar(cornerRadiusEnd=4, height=alt.RelativeBandSize(0.7), color=BLUE).encode(
+            x=alt.X("value_cr:Q", title="Value (Rs cr)"), y=alt.Y("state:N", sort="-x", title=None),
+            tooltip=["state", alt.Tooltip("value_cr:Q", format=",.0f", title="Rs cr")])
+        st.altair_chart(base_chart(ch.properties(height=280)), width="stretch")
+    with qb:
+        section("Mix", f"Category mix · {sel}", "Share of transaction value.")
+        mix = pd.DataFrame(svc.category_mix(pk))
+        bars = alt.Chart(mix).mark_bar(cornerRadiusEnd=4, height=alt.RelativeBandSize(0.68)).encode(
+            x=alt.X("pct_value:Q", title="% of value"), y=alt.Y("category:N", sort="-x", title=None),
+            color=alt.Color("category:N", scale=alt.Scale(domain=list(mix.category), range=CAT_COLORS), legend=None),
+            tooltip=["category", alt.Tooltip("pct_value:Q", format=".1f", title="% value")])
+        labels_c = bars.mark_text(align="left", dx=4, color="#52525b").encode(text=alt.Text("pct_value:Q", format=".1f"))
+        st.altair_chart(base_chart((bars + labels_c).properties(height=240)), width="stretch")
+
+    st.markdown("<hr/>", unsafe_allow_html=True)
+    section("Geography", f"State choropleth · {sel}", "Transaction value in the selected quarter.")
+    qmap = pd.DataFrame(svc.state_map_metrics(pk))
+    qmap["st_nm"] = qmap["state"].map(geo.slug_to_stnm)
+    qmap["value_cr"] = cr(qmap["txn_amount"])
+    qfig = px.choropleth(
+        qmap.dropna(subset=["st_nm"]), geojson=geo.load_geojson(),
+        featureidkey=geo.FEATURE_ID_KEY, locations="st_nm", color="value_cr",
+        color_continuous_scale=SEQ_BLUE, labels={"value_cr": "Value (Rs cr)"},
+        hover_name="state", hover_data={"st_nm": False, "value_cr": ":,.1f"})
+    qfig.update_geos(fitbounds="locations", visible=False)
+    qfig.update_layout(height=520, margin=dict(l=0, r=0, t=10, b=0),
+                       coloraxis_colorbar=dict(title="Rs cr", thickness=12),
+                       paper_bgcolor="rgba(0,0,0,0)", font=dict(color=INK))
+    st.plotly_chart(qfig, width="stretch", config={"displayModeBar": False})
+
+# =============================================================================
 # FORECASTS
 # =============================================================================
 with tab_forecast:
@@ -241,16 +304,20 @@ with tab_forecast:
         st.dataframe(show[["state", "category", "forecast_cr", "growth_pct"]],
                      hide_index=True, width="stretch")
     with b:
-        section("Districts", f"Top district forecasts · {fc['quarter']}", "Highest projected value.")
         if meta.get("districts_available"):
+            section("Districts", f"Top district forecasts · {fc['quarter']}", "Highest projected value.")
             dist = pd.DataFrame(svc.forecast_districts(15)["rows"])
             show = dist.assign(forecast_cr=lambda d: cr(d.forecast_champion).round(0),
                                growth_pct=lambda d: d.growth_vs_last_pct.round(1))
             st.dataframe(show[["state", "district", "forecast_cr", "growth_pct"]],
                          hide_index=True, width="stretch")
         else:
-            st.caption("District-grain forecasts are disabled in light mode "
-                       "(`PULSE_LIGHT=1`). Deploy with full ingestion to enable them.")
+            section("Districts", "District forecasts",
+                    "Not enabled on this lightweight deployment.")
+            st.caption(
+                "District-grain forecasts (700+ districts) are turned off here to fit a "
+                "free-tier host. The same leakage-free model runs them when deployed with "
+                "full ingestion — state and category forecasts above are unaffected.")
 
 # =============================================================================
 # MAP

@@ -45,8 +45,22 @@ env vars to trade coverage for cold-start time.
    `map`/`top` feeds) and disables the heavy district-grain forecast — cutting
    memory and first-load time to fit the free tier's ~1 GB RAM. State and category
    forecasts, the choropleth, anomalies and segments all still work; the district
-   forecast panel shows a note instead. Drop `PULSE_LIGHT` on a larger instance to
-   enable district-level forecasts.
+   forecast panel shows a note instead.
+
+   **To enable full district-level forecasts**, drop `PULSE_LIGHT` (or set it to
+   `0`). This ingests the full `map`/`top` feeds and forecasts all 700+ districts —
+   heavier on RAM. If the free tier OOMs during the first build, narrow the window
+   to shrink it:
+
+   ```toml
+   PULSE_AUTO_BUILD = "1"
+   PULSE_DB_PATH    = "/tmp/pulse.duckdb"
+   PULSE_MIN_YEAR   = "2023"     # one year keeps full-district ingestion light
+   PULSE_MAX_YEAR   = "2024"
+   ```
+
+   If it still OOMs, either keep `PULSE_LIGHT=1` or move to a Render/Fly instance
+   with more memory (districts then work with the full year range).
 
 On first load the app builds the warehouse from the public Pulse dataset (cached
 for the session). `requirements.txt` is installed automatically.

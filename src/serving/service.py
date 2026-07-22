@@ -83,7 +83,22 @@ class InsightService:
         df["avg_ticket"] = df.txn_amount / df.txn_count
         return df.to_dict("records")
 
-    def category_mix(self) -> list[dict]:
+    def latest_pk(self) -> int:
+        return int(self._sql(
+            "SELECT MAX(year*10+quarter) pk FROM agg_transaction WHERE level='country'"
+        ).iloc[0, 0])
+
+    def available_quarters(self) -> list[dict]:
+        """All quarters present, oldest first — drives the time-travel selector."""
+        df = self._sql(
+            "SELECT DISTINCT year, quarter, year*10+quarter AS period_key "
+            "FROM agg_transaction WHERE level='country' ORDER BY period_key"
+        )
+        df["label"] = df.period_key.map(period_label)
+        return df.to_dict("records")
+
+    def category_mix(self, period_key: int | None = None) -> list[dict]:
+        pk = period_key if period_key is not None else self.latest_pk()
         return self._sql(
             """
             SELECT category,
@@ -91,22 +106,23 @@ class InsightService:
                    SUM(txn_amount) AS txn_amount,
                    100.0 * SUM(txn_amount) / SUM(SUM(txn_amount)) OVER () AS pct_value
             FROM agg_transaction
-            WHERE level='country'
-              AND (year*10+quarter) = (SELECT MAX(year*10+quarter)
-                                       FROM agg_transaction WHERE level='country')
+            WHERE level='country' AND (year*10+quarter) = ?
             GROUP BY category ORDER BY pct_value DESC
-            """
+            """,
+            [pk],
         ).to_dict("records")
 
-    def top_states(self, n: int = 10) -> list[dict]:
+    def top_states(self, n: int = 10, period_key: int | None = None) -> list[dict]:
+        pk = period_key if period_key is not None else \
+            int(self._sql("SELECT MAX(period_key) pk FROM state_txn_quarter").iloc[0, 0])
         return self._sql(
             """
             SELECT state, txn_count, txn_amount
             FROM state_txn_quarter
-            WHERE period_key = (SELECT MAX(period_key) FROM state_txn_quarter)
+            WHERE period_key = ?
             ORDER BY txn_amount DESC LIMIT ?
             """,
-            [n],
+            [pk, n],
         ).to_dict("records")
 
     def growth_leaders(self, n: int = 15) -> list[dict]:
@@ -274,21 +290,23 @@ class InsightService:
                                 "anomaly_score"]].to_dict("records"),
         })
 
-    def state_map_metrics(self) -> list[dict]:
-        """Per-state latest value + YoY growth, for the choropleth."""
+    def state_map_metrics(self, period_key: int | None = None) -> list[dict]:
+        """Per-state value + YoY growth for a quarter (default latest), for the map."""
+        pk = period_key if period_key is not None else \
+            int(self._sql("SELECT MAX(period_key) pk FROM state_txn_quarter").iloc[0, 0])
         return self._sql(
             """
-            WITH latest AS (SELECT MAX(period_key) pk FROM state_txn_quarter),
-                 yoy AS (
-                    SELECT state, txn_amount,
-                           100.0*(txn_amount - LAG(txn_amount,4) OVER w)
-                                /NULLIF(LAG(txn_amount,4) OVER w,0) AS yoy_pct
-                    FROM state_txn_quarter
-                    WINDOW w AS (PARTITION BY state ORDER BY period_key)
-                    QUALIFY period_key = (SELECT pk FROM latest))
+            WITH yoy AS (
+                SELECT state, period_key, txn_amount,
+                       100.0*(txn_amount - LAG(txn_amount,4) OVER w)
+                            /NULLIF(LAG(txn_amount,4) OVER w,0) AS yoy_pct
+                FROM state_txn_quarter
+                WINDOW w AS (PARTITION BY state ORDER BY period_key)
+                QUALIFY period_key = ?)
             SELECT state, txn_amount, ROUND(yoy_pct,1) AS yoy_pct FROM yoy
             ORDER BY txn_amount DESC
-            """
+            """,
+            [pk],
         ).to_dict("records")
 
     @functools.cached_property
@@ -302,8 +320,10 @@ class InsightService:
 
     @functools.cached_property
     def _segments(self):
-        labelled, profile, meta = segment_states(build_features(db_path=self.db_path))
-        return labelled, profile, meta
+        # Segmentation needs full behavioural history (YoY growth etc.), so feed
+        # it the raw state panel — not the lag-trimmed feature frame, which can
+        # leave too few quarters on a narrow date range.
+        return segment_states(panels.state_panel(self.db_path))
 
     def segments(self) -> dict:
         labelled, profile, meta = self._segments

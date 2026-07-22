@@ -73,6 +73,15 @@ def segment_states(df: pd.DataFrame | None = None, k: int | None = None,
                    random_state: int = 42) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     """Cluster states. Returns (labelled_profiles, cluster_profile, meta)."""
     prof = build_state_profiles(df)
+    if len(prof) < 2:
+        # Too little history to segment (e.g. a very narrow date range). Degrade
+        # gracefully instead of raising — one "unsegmented" bucket.
+        prof = prof.copy()
+        prof["cluster"] = 0
+        empty = prof.groupby("cluster")[PROFILE_FEATURES].mean().assign(
+            n_states=prof.groupby("cluster").size()).reset_index()
+        return prof.reset_index(), empty, {"k": 0, "silhouette_scores": {}, "silhouette": float("nan")}
+
     X = StandardScaler().fit_transform(prof[PROFILE_FEATURES].to_numpy("float64"))
 
     if k is None:
