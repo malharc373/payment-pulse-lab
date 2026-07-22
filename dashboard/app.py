@@ -141,8 +141,10 @@ _required = ["available_quarters", "state_map_metrics", "forecast_categories", "
 _missing = [m for m in _required if not hasattr(svc, m)]
 if _missing:
     st.error(
-        "App and service are out of sync (service is missing: "
-        f"{', '.join(_missing)}). Push the full commit — every changed file — and reload."
+        "The running service is stale (missing: "
+        f"{', '.join(_missing)}). This happens after a code update because the host "
+        "hot-reloads the script but keeps old modules in memory. **Reboot the app** "
+        "(Manage app → Reboot) — a hot-reload or another push will not clear it."
     )
     st.stop()
 
