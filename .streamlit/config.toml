@@ -1,0 +1,15 @@
+# Neutral, shadcn/ui-inspired light theme (Tailwind "zinc" scale).
+# Chrome stays neutral; the single accent (blue) matches the chart palette.
+[theme]
+base = "light"
+primaryColor = "#2a78d6"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#fafafa"
+textColor = "#09090b"
+font = "sans-serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false

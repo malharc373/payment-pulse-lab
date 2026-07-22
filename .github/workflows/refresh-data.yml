@@ -1,0 +1,40 @@
+name: Refresh data
+
+# Scheduled re-ingestion: pull the latest published Pulse data, rebuild the
+# warehouse, and run the data-quality checks. New quarters are discovered
+# automatically. The run fails if any quality check FAILs, so a bad upstream
+# publish is caught rather than silently served. The built warehouse is kept as
+# an artifact a deployment can pull.
+on:
+  schedule:
+    - cron: "0 6 * * 1"      # Mondays 06:00 UTC
+  workflow_dispatch:          # allow manual runs
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ingest + validate (fails on any quality-check FAIL)
+        run: python -m scripts.run_pipeline --min-year 2018 --max-year 2025
+
+      - name: Report coverage
+        run: |
+          python - <<'PY'
+          from src.serving.service import InsightService
+          print("Warehouse coverage:", InsightService().meta())
+          PY
+
+      - name: Upload warehouse artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulse-warehouse
+          path: data/warehouse/pulse.duckdb
+          retention-days: 14

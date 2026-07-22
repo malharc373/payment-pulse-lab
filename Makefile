@@ -1,6 +1,6 @@
 .PHONY: help setup pipeline pipeline-full kpis growth anomaly-sql \
-        backtest anomaly segment models api dashboard lint test \
-        docker-build docker-up docker-down clean
+        backtest anomaly segment models snapshot artifact api dashboard \
+        lint test docker-build docker-up docker-down clean
 
 PY := ./.venv/bin/python
 PIP := ./.venv/bin/pip
@@ -39,6 +39,12 @@ segment:  ## Cluster states into behavioural archetypes
 	$(PY) -m scripts.run_segmentation
 
 models: backtest anomaly segment  ## Run all Phase-2 modeling steps
+
+snapshot:  ## Export reports/snapshot.json for the static dashboard
+	$(PY) -m scripts.export_snapshot
+
+artifact:  ## Build the self-contained shareable dashboard (reports/dashboard.html)
+	$(PY) -m scripts.build_artifact
 
 api:  ## Serve the FastAPI app (http://localhost:8000/docs)
 	$(PY) -m uvicorn src.api.main:app --reload --port 8000

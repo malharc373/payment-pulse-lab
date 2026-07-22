@@ -73,6 +73,21 @@ def forecast_next_quarter():
     return svc().forecast_next_quarter()
 
 
+@app.get("/forecast/categories", tags=["forecast"])
+def forecast_categories(top: int = Query(25, ge=1, le=200)):
+    return svc().forecast_categories(top)
+
+
+@app.get("/forecast/districts", tags=["forecast"])
+def forecast_districts(top: int = Query(30, ge=1, le=500), state: str | None = None):
+    return svc().forecast_districts(top, state=state)
+
+
+@app.get("/map/states", tags=["analytics"])
+def map_states():
+    return svc().state_map_metrics()
+
+
 @app.get("/anomalies", tags=["anomalies"])
 def anomalies(top: int = Query(20, ge=1, le=200)):
     return svc().anomalies(top)
@@ -93,4 +108,4 @@ def state_detail(state: str):
     service = svc()
     if state not in service.states():
         raise HTTPException(status_code=404, detail=f"Unknown state '{state}'.")
-    return {"state": state, "history": service.state_history(state)}
+    return service.state_detail(state)

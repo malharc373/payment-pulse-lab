@@ -1,47 +1,20 @@
-"""Smoke tests for the FastAPI layer, backed by a tiny synthetic warehouse.
+"""Smoke tests for the FastAPI layer, backed by a synthetic warehouse.
 
-We build a small DuckDB from fixture rows, point the service at it, and exercise
-the routes with FastAPI's TestClient — no network, no real data required.
+We build a small complete DuckDB (all five tables), point the service at it, and
+exercise the routes with FastAPI's TestClient — no network, no real data.
 """
 from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
 
-from src.transforms.load_duckdb import load_warehouse
+from tests import synth
 
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
-    # Build a synthetic warehouse with enough history for the SQL endpoints.
-    rows = {"agg_transaction": [], "agg_user": []}
-    for s, base in (("karnataka", 1e11), ("maharashtra", 1.2e11)):
-        amt = base
-        for i in range(12):
-            y, q = 2021 + i // 4, i % 4 + 1
-            amt *= 1.1
-            rows["agg_transaction"].append({
-                "level": "state", "geo": s, "year": y, "quarter": q,
-                "category": "Merchant payments", "txn_count": amt / 1500, "txn_amount": amt})
-            rows["agg_transaction"].append({
-                "level": "state", "geo": s, "year": y, "quarter": q,
-                "category": "Peer-to-peer payments", "txn_count": amt / 3000, "txn_amount": amt * 3})
-            rows["agg_user"].append({
-                "level": "state", "geo": s, "year": y, "quarter": q,
-                "registered_users": 1e7 * (i + 1), "app_opens": 1e8 * (i + 1)})
-    # National rollup for category-mix / trend endpoints.
-    for i in range(12):
-        y, q = 2021 + i // 4, i % 4 + 1
-        for cat, mult in (("Merchant payments", 1.0), ("Peer-to-peer payments", 3.0)):
-            rows["agg_transaction"].append({
-                "level": "country", "geo": "india", "year": y, "quarter": q,
-                "category": cat, "txn_count": 1e8 * (i + 1) * mult,
-                "txn_amount": 1e11 * (i + 1) * mult})
+    db = synth.build(tmp_path / "test.duckdb")
 
-    db = tmp_path / "test.duckdb"
-    load_warehouse(rows, db_path=db)
-
-    # Point config + service singleton at the temp warehouse.
     from src import config
     from src.serving import service
     monkeypatch.setattr(config, "DB_PATH", db)
@@ -58,27 +31,46 @@ def test_health_ok(client):
 
 
 def test_meta_reports_states(client):
-    r = client.get("/meta")
-    assert r.status_code == 200 and r.json()["states"] == 2
+    assert client.get("/meta").json()["states"] == 2
 
 
 def test_category_mix_sums_to_100(client):
-    r = client.get("/kpis/category-mix")
-    assert r.status_code == 200
-    assert abs(sum(c["pct_value"] for c in r.json()) - 100.0) < 1e-6
+    body = client.get("/kpis/category-mix").json()
+    assert abs(sum(c["pct_value"] for c in body) - 100.0) < 1e-6
 
 
 def test_top_states_respects_n(client):
-    r = client.get("/kpis/top-states?n=1")
-    assert r.status_code == 200 and len(r.json()) == 1
+    assert len(client.get("/kpis/top-states?n=1").json()) == 1
 
 
-def test_forecast_next_quarter_shape(client):
-    r = client.get("/forecast/next-quarter")
-    assert r.status_code == 200
-    body = r.json()
+def test_forecast_next_quarter_has_intervals(client):
+    body = client.get("/forecast/next-quarter").json()
     assert "quarter" in body and len(body["states"]) == 2
-    assert {"forecast_champion", "forecast_ridge"} <= set(body["states"][0])
+    row = body["states"][0]
+    assert {"forecast_champion", "forecast_ridge", "forecast_lo", "forecast_hi"} <= set(row)
+    assert row["forecast_lo"] <= row["forecast_champion"] <= row["forecast_hi"]
+
+
+def test_forecast_categories(client):
+    body = client.get("/forecast/categories?top=10").json()
+    assert body["rows"] and {"state", "category"} <= set(body["rows"][0])
+
+
+def test_forecast_districts(client):
+    body = client.get("/forecast/districts?top=10").json()
+    assert body["rows"] and {"state", "district"} <= set(body["rows"][0])
+
+
+def test_map_states(client):
+    body = client.get("/map/states").json()
+    assert len(body) == 2 and "yoy_pct" in body[0]
+
+
+def test_state_detail_drilldown(client):
+    body = client.get("/states/karnataka").json()
+    assert body["state"] == "karnataka"
+    assert body["forecast"] is not None and "cluster" in body
+    assert isinstance(body["history"], list) and len(body["history"]) > 0
 
 
 def test_unknown_state_404(client):
@@ -86,5 +78,4 @@ def test_unknown_state_404(client):
 
 
 def test_segments_endpoint(client):
-    r = client.get("/segments")
-    assert r.status_code == 200 and r.json()["k"] >= 2
+    assert client.get("/segments").json()["k"] >= 2

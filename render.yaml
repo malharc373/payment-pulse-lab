@@ -1,0 +1,32 @@
+# Render blueprint: one Docker image, two web services (API + dashboard).
+# Each container self-builds the warehouse on first boot (see docker/entrypoint.sh).
+# Deploy: push to GitHub, then "New > Blueprint" on Render and point at this repo.
+services:
+  - type: web
+    name: upi-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+    healthCheckPath: /health
+    envVars:
+      - key: PULSE_DB_PATH
+        value: /app/data/warehouse/pulse.duckdb
+      - key: PULSE_MIN_YEAR
+        value: "2020"
+      - key: PULSE_MAX_YEAR
+        value: "2024"
+
+  - type: web
+    name: upi-dashboard
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: >
+      streamlit run dashboard/app.py
+      --server.port 8501 --server.address 0.0.0.0 --server.headless true
+    envVars:
+      - key: PULSE_DB_PATH
+        value: /app/data/warehouse/pulse.duckdb
+      - key: PULSE_MIN_YEAR
+        value: "2020"
+      - key: PULSE_MAX_YEAR
+        value: "2024"

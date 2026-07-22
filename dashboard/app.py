@@ -1,46 +1,82 @@
 """Streamlit dashboard for UPI Reliability & Growth Intelligence.
 
-Reads directly from :class:`InsightService` (same source as the API), so no
-running API is required. Charts use a CVD-validated categorical palette; category
-charts carry direct labels + a legend (the light-mode contrast-relief rule).
+Reads directly from :class:`InsightService` (same source as the API). Chrome
+follows a neutral shadcn/ui-style system; charts use a CVD-validated categorical
+palette and a single-hue sequential blue for magnitude. Organised into tabs:
+Overview, Forecasts, Map, Explore, Signals.
 
 Run:  streamlit run dashboard/app.py
 """
 from __future__ import annotations
 
+import sys
 import warnings
+from pathlib import Path
 
 import altair as alt
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 warnings.simplefilter("ignore")
-
-# Make `src` importable when Streamlit runs this file directly.
-import sys
-from pathlib import Path
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from src.serving import geo  # noqa: E402
 from src.serving.service import InsightService, warehouse_exists  # noqa: E402
 
-# --- Validated categorical palette (dataviz skill default) -------------------
+# --- Design tokens -----------------------------------------------------------
 CAT_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"]
-BLUE = "#2a78d6"
-GOOD = "#0ca30c"
-CRIT = "#d03b3b"
-GRID = "#e1e0d9"
-MUTED = "#898781"
+SEQ_BLUE = ["#eaf2fd", "#b7d3f6", "#86b6ef", "#3987e5", "#1c5cab", "#0d366b"]
+BLUE, ORANGE = "#2a78d6", "#eb6834"
+INK, MUTED, BORDER, GRID = "#09090b", "#71717a", "#e4e4e7", "#ececee"
 
-st.set_page_config(page_title="UPI Growth Intelligence", page_icon="📈", layout="wide")
+st.set_page_config(page_title="UPI Growth Intelligence", layout="wide")
+
+CSS = f"""
+<style>
+:root {{ --ink:{INK}; --muted:{MUTED}; --border:{BORDER}; --accent:{BLUE}; }}
+html, body, [class*="css"], .stMarkdown, .stMetric {{
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}}
+.block-container {{ padding-top: 2.1rem; padding-bottom: 3rem; max-width: 1200px; }}
+#MainMenu, footer, header[data-testid="stHeader"] {{ visibility: hidden; height: 0; }}
+.masthead h1 {{ font-size: 1.9rem; font-weight: 680; letter-spacing:-.025em; color:var(--ink);
+  margin:0 0 .35rem 0; line-height:1.15; }}
+.masthead p {{ color:var(--muted); font-size:.95rem; margin:0; max-width:64ch; }}
+.pill {{ display:inline-flex; align-items:center; gap:.4rem; font-size:.72rem; color:var(--muted);
+  border:1px solid var(--border); border-radius:999px; padding:.2rem .6rem; margin-top:.7rem; background:#fafafa; }}
+.pill .dot {{ width:6px; height:6px; border-radius:999px; background:#1baf7a; }}
+.eyebrow {{ text-transform:uppercase; letter-spacing:.12em; font-size:.7rem; font-weight:600;
+  color:var(--muted); margin:0 0 .1rem 0; }}
+.sec-title {{ font-size:1.12rem; font-weight:640; letter-spacing:-.01em; color:var(--ink); margin:0 0 .1rem 0; }}
+.sec-sub {{ color:var(--muted); font-size:.85rem; margin:0 0 .4rem 0; line-height:1.4; }}
+div[data-testid="stMetric"] {{ background:#fff; border:1px solid var(--border); border-radius:14px;
+  padding:1rem 1.15rem; box-shadow:0 1px 2px rgba(9,9,11,.04); }}
+div[data-testid="stMetric"] label p {{ color:var(--muted); font-size:.8rem; font-weight:500; }}
+div[data-testid="stMetricValue"] {{ font-weight:660; letter-spacing:-.02em; color:var(--ink); }}
+hr {{ border-color:var(--border); margin:1.5rem 0; }}
+div[data-testid="stDataFrame"] {{ border:1px solid var(--border); border-radius:12px; overflow:hidden; }}
+div[data-testid="stExpander"] {{ border:1px solid var(--border); border-radius:12px; }}
+button[data-baseweb="tab"] {{ font-weight:550; }}
+</style>
+"""
+st.markdown(CSS, unsafe_allow_html=True)
 
 
-def _base(chart: alt.Chart) -> alt.Chart:
-    """Recessive grid/axes, no chart-junk."""
+def section(eyebrow: str, title: str, sub: str | None = None) -> None:
+    html = f'<div class="eyebrow">{eyebrow}</div><div class="sec-title">{title}</div>'
+    if sub:
+        html += f'<div class="sec-sub">{sub}</div>'
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def base_chart(chart: alt.Chart) -> alt.Chart:
     return chart.configure_axis(
-        gridColor=GRID, domainColor="#c3c2b7", tickColor=GRID,
+        gridColor=GRID, domainColor=BORDER, tickColor=BORDER,
         labelColor=MUTED, titleColor=MUTED, labelFontSize=11, titleFontSize=11,
-    ).configure_view(strokeWidth=0).configure_legend(labelColor="#52514e", titleColor=MUTED)
+    ).configure_view(strokeWidth=0).configure_legend(
+        labelColor="#52525b", titleColor=MUTED
+    ).configure_title(color=INK, fontSize=12, fontWeight=600, anchor="start")
 
 
 @st.cache_resource
@@ -49,157 +85,268 @@ def get_service() -> InsightService:
 
 
 def cr(x: float) -> float:
-    """INR -> crore."""
     return x / 1e7
 
 
-# --- Guard: warehouse must exist ---------------------------------------------
-st.title("📈 UPI Reliability & Growth Intelligence")
-st.caption(
-    "Public, aggregated PhonePe Pulse data. Figures are anonymized; outputs are "
-    "**areas for investigation / growth opportunities**, not claims about individuals."
-)
+# --- Guard -------------------------------------------------------------------
+@st.cache_resource(show_spinner="Building the warehouse from PhonePe Pulse (first run only)…")
+def _bootstrap_warehouse() -> bool:
+    """On hosts without a pipeline step (e.g. Streamlit Cloud), build on first run
+    when PULSE_AUTO_BUILD=1. Cached so it runs once per container."""
+    import os
 
-if not warehouse_exists():
-    st.error("Warehouse not found. Build it first:  `make pipeline-full`")
+    if warehouse_exists():
+        return True
+    if os.getenv("PULSE_AUTO_BUILD", "0") in ("1", "true", "True"):
+        from scripts.run_pipeline import main as run_pipeline
+
+        run_pipeline([
+            "--min-year", os.getenv("PULSE_MIN_YEAR", "2020"),
+            "--max-year", os.getenv("PULSE_MAX_YEAR", "2024"),
+        ])
+    return warehouse_exists()
+
+
+if not _bootstrap_warehouse():
+    st.error(
+        "Warehouse not found. Build it with `make pipeline-full`, or set "
+        "`PULSE_AUTO_BUILD=1` to build automatically on first load."
+    )
     st.stop()
 
 svc = get_service()
 meta = svc.meta()
 
-# --- KPI stat tiles ----------------------------------------------------------
-trend = pd.DataFrame(svc.national_trend())
-latest, prev = trend.iloc[-1], trend.iloc[-2]
-val_qoq = 100 * (latest.txn_amount / prev.txn_amount - 1)
-cnt_qoq = 100 * (latest.txn_count / prev.txn_count - 1)
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Latest quarter", meta["latest_quarter"])
-c2.metric(f"Txn value ({meta['latest_quarter']})", f"₹{cr(latest.txn_amount)/1e5:,.1f}L cr",
-          f"{val_qoq:+.1f}% QoQ")
-c3.metric("Transactions", f"{latest.txn_count/1e9:,.1f} B", f"{cnt_qoq:+.1f}% QoQ")
-c4.metric("Avg ticket size", f"₹{latest.avg_ticket:,.0f}")
-
-st.divider()
-
-# --- National trend (two single-series charts; never a dual axis) ------------
-st.subheader("National trend")
-tcol1, tcol2 = st.columns(2)
-trend_plot = trend.assign(value_cr=lambda d: cr(d.txn_amount), count_bn=lambda d: d.txn_count / 1e9)
-
-with tcol1:
-    ch = alt.Chart(trend_plot).mark_area(
-        line={"color": BLUE, "strokeWidth": 2}, color=alt.Gradient(
-            gradient="linear", stops=[alt.GradientStop(color="#cde2fb", offset=0),
-                                      alt.GradientStop(color="#86b6ef", offset=1)],
-            x1=1, x2=1, y1=1, y2=0)
-    ).encode(
-        x=alt.X("quarter_label:O", title=None, axis=alt.Axis(labelAngle=-45)),
-        y=alt.Y("value_cr:Q", title="Transaction value (₹ cr)"),
-        tooltip=["quarter_label", alt.Tooltip("value_cr:Q", format=",.0f", title="₹ cr")],
-    ).properties(height=260, title="Value")
-    st.altair_chart(_base(ch), width="stretch")
-
-with tcol2:
-    ch = alt.Chart(trend_plot).mark_line(color=BLUE, strokeWidth=2, point=True).encode(
-        x=alt.X("quarter_label:O", title=None, axis=alt.Axis(labelAngle=-45)),
-        y=alt.Y("count_bn:Q", title="Transactions (billion)"),
-        tooltip=["quarter_label", alt.Tooltip("count_bn:Q", format=",.1f", title="billion")],
-    ).properties(height=260, title="Count")
-    st.altair_chart(_base(ch), width="stretch")
-
-# --- Category mix + Top states ----------------------------------------------
-mcol1, mcol2 = st.columns(2)
-
-with mcol1:
-    st.subheader(f"Category mix — {meta['latest_quarter']}")
-    mix = pd.DataFrame(svc.category_mix())
-    bars = alt.Chart(mix).mark_bar(cornerRadiusEnd=4, height=alt.RelativeBandSize(0.7)).encode(
-        x=alt.X("pct_value:Q", title="% of value"),
-        y=alt.Y("category:N", sort="-x", title=None),
-        color=alt.Color("category:N",
-                        scale=alt.Scale(domain=list(mix.category), range=CAT_COLORS),
-                        legend=None),
-        tooltip=["category", alt.Tooltip("pct_value:Q", format=".1f", title="% value")],
-    )
-    labels = bars.mark_text(align="left", dx=4, color="#52514e").encode(
-        text=alt.Text("pct_value:Q", format=".1f"))
-    st.altair_chart(_base((bars + labels).properties(height=240)), width="stretch")
-
-with mcol2:
-    st.subheader(f"Top states by value — {meta['latest_quarter']}")
-    tops = pd.DataFrame(svc.top_states(10)).assign(value_cr=lambda d: cr(d.txn_amount))
-    ch = alt.Chart(tops).mark_bar(cornerRadiusEnd=4, height=alt.RelativeBandSize(0.72), color=BLUE).encode(
-        x=alt.X("value_cr:Q", title="Transaction value (₹ cr)"),
-        y=alt.Y("state:N", sort="-x", title=None),
-        tooltip=["state", alt.Tooltip("value_cr:Q", format=",.0f", title="₹ cr")],
-    )
-    st.altair_chart(_base(ch.properties(height=280)), width="stretch")
-
-st.divider()
-
-# --- Forecast ----------------------------------------------------------------
-fc = svc.forecast_next_quarter()
-st.subheader(f"Next-quarter forecast — {fc['quarter']}")
-st.caption(f"Champion model: **{fc['champion_model']}** (won the walk-forward backtest, "
-           "WAPE 6.8%). Ridge shown for comparison.")
-fdf = pd.DataFrame(fc["states"]).head(12)
-fplot = fdf.assign(forecast_cr=lambda d: cr(d.forecast_champion),
-                   ridge_cr=lambda d: cr(d.forecast_ridge))
-melt = fplot.melt(id_vars="state", value_vars=["forecast_cr", "ridge_cr"],
-                  var_name="model", value_name="value_cr")
-model_names = {"forecast_cr": fc["champion_model"], "ridge_cr": "ridge"}
-melt["model"] = melt["model"].map(model_names)
-ch = alt.Chart(melt).mark_bar(cornerRadiusEnd=3).encode(
-    x=alt.X("value_cr:Q", title="Forecast value (₹ cr)"),
-    y=alt.Y("state:N", sort="-x", title=None),
-    yOffset="model:N",
-    color=alt.Color("model:N", scale=alt.Scale(range=CAT_COLORS[:2]), title="Model"),
-    tooltip=["state", "model", alt.Tooltip("value_cr:Q", format=",.0f", title="₹ cr")],
+st.markdown(
+    f"""
+    <div class="masthead">
+      <h1>UPI Reliability &amp; Growth Intelligence</h1>
+      <p>Where digital-payment adoption is accelerating across India — growth,
+         forecasts, anomalies and regional segments on public PhonePe Pulse data.
+         Figures are aggregated and anonymized; outputs are areas for investigation,
+         not claims about individuals.</p>
+      <span class="pill"><span class="dot"></span>
+        PhonePe Pulse open dataset · {meta['first_quarter']}–{meta['latest_quarter']} · {meta['states']} states</span>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
-st.altair_chart(_base(ch.properties(height=380)), width="stretch")
 
-st.divider()
+tab_overview, tab_forecast, tab_map, tab_explore, tab_signals = st.tabs(
+    ["Overview", "Forecasts", "Map", "Explore state", "Signals"]
+)
 
-# --- Growth leaders & expansion signals -------------------------------------
-gcol1, gcol2 = st.columns(2)
-with gcol1:
-    st.subheader("Sustained growth leaders")
-    st.caption("Highest median quarter-over-quarter value growth.")
-    st.dataframe(pd.DataFrame(svc.growth_leaders(12)), hide_index=True, width="stretch")
-with gcol2:
-    st.subheader("Expansion signals")
-    st.caption("High YoY value growth **and** below-median transactions/user — headroom.")
-    st.dataframe(pd.DataFrame(svc.expansion_signals()), hide_index=True, width="stretch")
+# =============================================================================
+# OVERVIEW
+# =============================================================================
+with tab_overview:
+    trend = pd.DataFrame(svc.national_trend())
+    latest, prev = trend.iloc[-1], trend.iloc[-2]
+    val_qoq = 100 * (latest.txn_amount / prev.txn_amount - 1)
+    cnt_qoq = 100 * (latest.txn_count / prev.txn_count - 1)
 
-st.divider()
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Latest quarter", meta["latest_quarter"])
+    c2.metric("Transaction value", f"Rs {cr(latest.txn_amount)/1e5:,.1f}L cr", f"{val_qoq:+.1f}% QoQ")
+    c3.metric("Transactions", f"{latest.txn_count/1e9:,.1f} B", f"{cnt_qoq:+.1f}% QoQ")
+    c4.metric("Avg ticket size", f"Rs {latest.avg_ticket:,.0f}")
 
-# --- Anomalies ---------------------------------------------------------------
-st.subheader("Anomaly detection (Isolation Forest)")
-st.caption("Most unusual state-quarters by joint behaviour — areas for investigation.")
-adf = pd.DataFrame(svc.anomalies(15))
-adf_show = adf.assign(
-    txn_cr=lambda d: cr(d.txn_amount).round(0),
-    qoq_pct=lambda d: (100 * d.qoq_amt).round(1),
-    user_growth_pct=lambda d: (100 * d.user_growth).round(1),
-    value_user_gap_pct=lambda d: (100 * d.value_user_gap).round(1),
-    score=lambda d: d.anomaly_score.round(3),
-)[["state", "year", "quarter", "txn_cr", "qoq_pct", "user_growth_pct",
-   "value_user_gap_pct", "score"]]
-st.dataframe(adf_show, hide_index=True, width="stretch")
+    st.markdown("<hr/>", unsafe_allow_html=True)
+    section("Trend", "National transaction volume",
+            "Value and count shown separately — never on one dual axis.")
+    tp = trend.assign(value_cr=lambda d: cr(d.txn_amount), count_bn=lambda d: d.txn_count / 1e9)
+    a, b = st.columns(2)
+    with a:
+        ch = alt.Chart(tp).mark_area(
+            line={"color": BLUE, "strokeWidth": 2},
+            color=alt.Gradient(gradient="linear",
+                stops=[alt.GradientStop(color="#eaf2fd", offset=0),
+                       alt.GradientStop(color="#b7d3f6", offset=1)], x1=1, x2=1, y1=1, y2=0),
+        ).encode(
+            x=alt.X("quarter_label:O", title=None, axis=alt.Axis(labelAngle=-45)),
+            y=alt.Y("value_cr:Q", title="Value (Rs cr)"),
+            tooltip=["quarter_label", alt.Tooltip("value_cr:Q", format=",.0f", title="Rs cr")],
+        ).properties(height=250, title="Value")
+        st.altair_chart(base_chart(ch), width="stretch")
+    with b:
+        ch = alt.Chart(tp).mark_line(color=BLUE, strokeWidth=2, point=True).encode(
+            x=alt.X("quarter_label:O", title=None, axis=alt.Axis(labelAngle=-45)),
+            y=alt.Y("count_bn:Q", title="Transactions (billion)"),
+            tooltip=["quarter_label", alt.Tooltip("count_bn:Q", format=",.1f", title="billion")],
+        ).properties(height=250, title="Count")
+        st.altair_chart(base_chart(ch), width="stretch")
 
-st.divider()
+    st.markdown("<hr/>", unsafe_allow_html=True)
+    a, b = st.columns(2)
+    with a:
+        section("Mix", f"Payment categories · {meta['latest_quarter']}", "Share of total value.")
+        mix = pd.DataFrame(svc.category_mix())
+        bars = alt.Chart(mix).mark_bar(cornerRadiusEnd=4, height=alt.RelativeBandSize(0.68)).encode(
+            x=alt.X("pct_value:Q", title="% of value"), y=alt.Y("category:N", sort="-x", title=None),
+            color=alt.Color("category:N", scale=alt.Scale(domain=list(mix.category), range=CAT_COLORS), legend=None),
+            tooltip=["category", alt.Tooltip("pct_value:Q", format=".1f", title="% value")])
+        labels = bars.mark_text(align="left", dx=4, color="#52525b").encode(text=alt.Text("pct_value:Q", format=".1f"))
+        st.altair_chart(base_chart((bars + labels).properties(height=240)), width="stretch")
+    with b:
+        section("Leaders", f"Top states by value · {meta['latest_quarter']}", " ")
+        tops = pd.DataFrame(svc.top_states(10)).assign(value_cr=lambda d: cr(d.txn_amount))
+        ch = alt.Chart(tops).mark_bar(cornerRadiusEnd=4, height=alt.RelativeBandSize(0.7), color=BLUE).encode(
+            x=alt.X("value_cr:Q", title="Value (Rs cr)"), y=alt.Y("state:N", sort="-x", title=None),
+            tooltip=["state", alt.Tooltip("value_cr:Q", format=",.0f", title="Rs cr")])
+        st.altair_chart(base_chart(ch.properties(height=270)), width="stretch")
 
-# --- Segments ----------------------------------------------------------------
-seg = svc.segments()
-st.subheader(f"State segments (K-Means, k={seg['k']}, silhouette={seg['silhouette']:.2f})")
-for cl in seg["clusters"]:
-    with st.expander(
-        f"Cluster {int(cl['cluster'])} — {cl['n_states']} states · "
-        f"YoY {100*cl['yoy_growth']:.0f}% · {cl['txns_per_user']:.0f} txns/user · "
-        f"₹{cl['avg_ticket']:,.0f} ticket"
-    ):
-        st.write(", ".join(cl["states"]))
+# =============================================================================
+# FORECASTS
+# =============================================================================
+with tab_forecast:
+    fc = svc.forecast_next_quarter()
+    section("Forecast", f"Next-quarter state outlook · {fc['quarter']}",
+            f"Champion model **{fc['champion_model']}** (walk-forward WAPE 6.8%). "
+            "Bars show the point forecast; whiskers the 10–90% prediction interval.")
+    fdf = pd.DataFrame(fc["states"]).head(14)
+    fp = fdf.assign(champ=lambda d: cr(d.forecast_champion), lo=lambda d: cr(d.forecast_lo),
+                    hi=lambda d: cr(d.forecast_hi))
+    order = fp.sort_values("champ", ascending=False)["state"].tolist()
+    rule = alt.Chart(fp).mark_rule(color=MUTED, strokeWidth=1.5).encode(
+        y=alt.Y("state:N", sort=order, title=None),
+        x=alt.X("lo:Q", title="Forecast value (Rs cr)"), x2="hi:Q")
+    pt = alt.Chart(fp).mark_point(filled=True, color=BLUE, size=80).encode(
+        y=alt.Y("state:N", sort=order, title=None), x="champ:Q",
+        tooltip=["state", alt.Tooltip("champ:Q", format=",.0f", title="forecast"),
+                 alt.Tooltip("lo:Q", format=",.0f", title="low"),
+                 alt.Tooltip("hi:Q", format=",.0f", title="high")])
+    st.altair_chart(base_chart((rule + pt).properties(height=440)), width="stretch")
 
-st.caption(f"Warehouse: {meta['first_quarter']}–{meta['latest_quarter']}, "
-           f"{meta['states']} states · Source: PhonePe Pulse (CDLA-Permissive-2.0)")
+    st.markdown("<hr/>", unsafe_allow_html=True)
+    a, b = st.columns(2)
+    with a:
+        section("Categories", f"Fastest-growing category forecasts · {fc['quarter']}",
+                "Ranked by projected growth vs last quarter.")
+        cat = pd.DataFrame(svc.forecast_categories(60)["rows"])
+        cat = cat.sort_values("growth_vs_last_pct", ascending=False).head(12)
+        show = cat.assign(forecast_cr=lambda d: cr(d.forecast_champion).round(0),
+                          growth_pct=lambda d: d.growth_vs_last_pct.round(1))
+        st.dataframe(show[["state", "category", "forecast_cr", "growth_pct"]],
+                     hide_index=True, width="stretch")
+    with b:
+        section("Districts", f"Top district forecasts · {fc['quarter']}", "Highest projected value.")
+        dist = pd.DataFrame(svc.forecast_districts(15)["rows"])
+        show = dist.assign(forecast_cr=lambda d: cr(d.forecast_champion).round(0),
+                           growth_pct=lambda d: d.growth_vs_last_pct.round(1))
+        st.dataframe(show[["state", "district", "forecast_cr", "growth_pct"]],
+                     hide_index=True, width="stretch")
+
+# =============================================================================
+# MAP
+# =============================================================================
+with tab_map:
+    section("Geography", "State choropleth", "Colour by latest quarter's value or year-over-year growth.")
+    metric = st.radio("Metric", ["Transaction value", "YoY growth"], horizontal=True, label_visibility="collapsed")
+    mdf = pd.DataFrame(svc.state_map_metrics())
+    mdf["st_nm"] = mdf["state"].map(geo.slug_to_stnm)
+    mdf["value_cr"] = cr(mdf["txn_amount"])
+    col = "value_cr" if metric == "Transaction value" else "yoy_pct"
+    label = "Value (Rs cr)" if metric == "Transaction value" else "YoY growth (%)"
+    fig = px.choropleth(
+        mdf.dropna(subset=["st_nm"]), geojson=geo.load_geojson(),
+        featureidkey=geo.FEATURE_ID_KEY, locations="st_nm", color=col,
+        color_continuous_scale=SEQ_BLUE, labels={col: label},
+        hover_name="state", hover_data={"st_nm": False, col: ":,.1f"},
+    )
+    fig.update_geos(fitbounds="locations", visible=False)
+    fig.update_layout(height=560, margin=dict(l=0, r=0, t=10, b=0),
+                      coloraxis_colorbar=dict(title=label, thickness=12),
+                      paper_bgcolor="rgba(0,0,0,0)", font=dict(color=INK))
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
+# =============================================================================
+# EXPLORE STATE (drill-down)
+# =============================================================================
+with tab_explore:
+    state = st.selectbox("State", svc.states(), index=svc.states().index("karnataka")
+                         if "karnataka" in svc.states() else 0)
+    detail = svc.state_detail(state)
+    f = detail["forecast"]
+    section("Drill-down", state.replace("-", " ").title(),
+            f"Cluster {detail['cluster']} · next quarter {f['quarter'] if f else 'n/a'}")
+    if f:
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Forecast (next Q)", f"Rs {cr(f['forecast_champion']):,.0f} cr", f"{f['growth_vs_last_pct']:+.1f}% vs last")
+        m2.metric("Interval (10–90%)", f"Rs {cr(f['forecast_lo']):,.0f} – {cr(f['forecast_hi']):,.0f} cr")
+        m3.metric("Last actual", f"Rs {cr(f['last_actual']):,.0f} cr")
+
+    hist = pd.DataFrame(detail["history"]).assign(value_cr=lambda d: cr(d.txn_amount), kind="actual")
+    if f:
+        fut_row = pd.DataFrame([{
+            "quarter_label": f["quarter"], "value_cr": cr(f["forecast_champion"]),
+            "lo": cr(f["forecast_lo"]), "hi": cr(f["forecast_hi"]), "kind": "forecast"}])
+    else:
+        fut_row = pd.DataFrame()
+    combo = pd.concat([hist, fut_row], ignore_index=True)
+    domain = combo["quarter_label"].tolist()
+
+    line = alt.Chart(hist).mark_line(color=BLUE, strokeWidth=2, point=True).encode(
+        x=alt.X("quarter_label:O", sort=domain, title=None, axis=alt.Axis(labelAngle=-45)),
+        y=alt.Y("value_cr:Q", title="Value (Rs cr)"),
+        tooltip=["quarter_label", alt.Tooltip("value_cr:Q", format=",.0f", title="Rs cr")])
+    layers = [line]
+    if f:
+        band = alt.Chart(fut_row).mark_rule(color=ORANGE, strokeWidth=1.5).encode(
+            x=alt.X("quarter_label:O", sort=domain), y="lo:Q", y2="hi:Q")
+        fpt = alt.Chart(fut_row).mark_point(filled=True, color=ORANGE, size=90).encode(
+            x=alt.X("quarter_label:O", sort=domain), y="value_cr:Q",
+            tooltip=[alt.Tooltip("value_cr:Q", format=",.0f", title="forecast")])
+        layers += [band, fpt]
+    st.altair_chart(base_chart(alt.layer(*layers).properties(height=300)), width="stretch")
+
+    if detail["anomalies"]:
+        section("Signals", "Notable quarters", "Highest anomaly scores for this state.")
+        adf = pd.DataFrame(detail["anomalies"]).assign(
+            qoq_pct=lambda d: (100 * d.qoq_amt).round(1),
+            value_user_gap_pct=lambda d: (100 * d.value_user_gap).round(1),
+            score=lambda d: d.anomaly_score.round(3))
+        st.dataframe(adf[["year", "quarter", "qoq_pct", "value_user_gap_pct", "score"]],
+                     hide_index=True, width="stretch")
+
+# =============================================================================
+# SIGNALS (growth, anomalies, segments)
+# =============================================================================
+with tab_signals:
+    a, b = st.columns(2)
+    with a:
+        section("Momentum", "Sustained growth leaders", "Highest median QoQ value growth.")
+        st.dataframe(pd.DataFrame(svc.growth_leaders(12)), hide_index=True, width="stretch")
+    with b:
+        section("Opportunity", "Expansion signals",
+                "High YoY value growth with below-median transactions per user.")
+        st.dataframe(pd.DataFrame(svc.expansion_signals()), hide_index=True, width="stretch")
+
+    st.markdown("<hr/>", unsafe_allow_html=True)
+    section("Anomalies", "Isolation Forest · state-quarters",
+            "Most unusual by joint behaviour — areas for investigation.")
+    adf = pd.DataFrame(svc.anomalies(15)).assign(
+        txn_cr=lambda d: cr(d.txn_amount).round(0),
+        qoq_pct=lambda d: (100 * d.qoq_amt).round(1),
+        user_growth_pct=lambda d: (100 * d.user_growth).round(1),
+        value_user_gap_pct=lambda d: (100 * d.value_user_gap).round(1),
+        score=lambda d: d.anomaly_score.round(3))
+    st.dataframe(adf[["state", "year", "quarter", "txn_cr", "qoq_pct",
+                      "user_growth_pct", "value_user_gap_pct", "score"]],
+                 hide_index=True, width="stretch")
+
+    st.markdown("<hr/>", unsafe_allow_html=True)
+    seg = svc.segments()
+    section("Segments", f"Regional archetypes · K-Means (k={seg['k']})",
+            f"Silhouette {seg['silhouette']:.2f}. Grouped by growth, engagement, ticket and mix.")
+    for cl in seg["clusters"]:
+        with st.expander(
+            f"Cluster {int(cl['cluster'])}  ·  {cl['n_states']} states  ·  "
+            f"YoY {100*cl['yoy_growth']:.0f}%  ·  {cl['txns_per_user']:.0f} txns/user  ·  "
+            f"Rs {cl['avg_ticket']:,.0f} ticket"):
+            st.write(", ".join(cl["states"]))
+
+st.markdown(
+    f'<p class="sec-sub" style="margin-top:1.5rem">Source: PhonePe Pulse open dataset '
+    f'(CDLA-Permissive-2.0) · {meta["first_quarter"]}–{meta["latest_quarter"]} · {meta["states"]} states</p>',
+    unsafe_allow_html=True,
+)

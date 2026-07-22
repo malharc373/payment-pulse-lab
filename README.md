@@ -14,17 +14,22 @@ anomalous enough to investigate?*
 
 | Layer | Module | Status |
 |---|---|---|
-| **Ingestion** | `src/ingestion/` — dynamic file discovery, cached concurrent fetch, per-shape parsers | ✅ Phase 1 |
-| **Warehouse** | `src/transforms/load_duckdb.py` — typed DuckDB tables + helper views | ✅ Phase 1 |
-| **Data quality** | `src/transforms/quality_checks.py` — 7 checks (grain, nulls, panel completeness, reconciliation) | ✅ Phase 1 |
-| **SQL analytics** | `src/analytics/*.sql` — KPIs, QoQ/YoY growth, concentration (HHI), robust anomaly flags | ✅ Phase 1 |
-| **Forecasting** | `src/modeling/` + `src/evaluation/` — time-valid features, naive baselines, ridge & GBM, **walk-forward backtest** | ✅ Phase 2 |
-| **Anomaly (ML)** | `src/modeling/anomaly_detection.py` — Isolation Forest over joint behaviour signals | ✅ Phase 2 |
-| **Segmentation** | `src/modeling/segmentation.py` — K-Means state archetypes (silhouette-selected k) | ✅ Phase 2 |
-| **API** | `src/api/` + `src/serving/` — FastAPI over an `InsightService` (11 endpoints) | ✅ Phase 3 |
-| **Dashboard** | `dashboard/app.py` — Streamlit + Altair, CVD-validated palette | ✅ Phase 3 |
-| **Deploy / CI** | Dockerfile + docker-compose; GitHub Actions (lint + tests + image build) | ✅ Phase 3 |
-| **Tests** | `tests/` — 33 unit tests incl. **temporal-leakage & API tests** | ✅ |
+| **Ingestion** | `src/ingestion/` — dynamic file discovery, cached concurrent fetch, per-shape parsers | Phase 1 |
+| **Warehouse** | `src/transforms/load_duckdb.py` — typed DuckDB tables + helper views | Phase 1 |
+| **Data quality** | `src/transforms/quality_checks.py` — 7 checks (grain, nulls, panel completeness, reconciliation) | Phase 1 |
+| **SQL analytics** | `src/analytics/*.sql` — KPIs, QoQ/YoY growth, concentration (HHI), robust anomaly flags | Phase 1 |
+| **Forecasting** | `src/modeling/` + `src/evaluation/` — time-valid features, naive baselines, ridge & GBM, **walk-forward backtest** | Phase 2 |
+| **Anomaly (ML)** | `src/modeling/anomaly_detection.py` — Isolation Forest over joint behaviour signals | Phase 2 |
+| **Segmentation** | `src/modeling/segmentation.py` — K-Means state archetypes (silhouette-selected k) | Phase 2 |
+| **API** | `src/api/` + `src/serving/` — FastAPI over an `InsightService` (15 endpoints) | Phase 3 |
+| **Dashboard** | `dashboard/app.py` — Streamlit + Altair + Plotly, tabbed, CVD-validated palette | Phase 3 |
+| **Deploy / CI** | Dockerfile + compose + Render/Fly configs; GitHub Actions (lint, tests, build) | Phase 3 |
+| **Multi-grain forecasting** | `src/modeling/panels.py` — same leakage-free code forecasts state, **category & district** | Phase 4 |
+| **Prediction intervals** | `src/modeling/intervals.py` — calibrated 10–90% bands from backtest residuals | Phase 4 |
+| **Choropleth + drill-down** | India state map (Plotly) + per-state explore tab | Phase 4 |
+| **Scheduled ingestion** | `.github/workflows/refresh-data.yml` — weekly re-ingest + validate | Phase 4 |
+| **Shareable snapshot** | `scripts/build_artifact.py` — self-contained static HTML dashboard | Phase 4 |
+| **Tests** | `tests/` — 49 unit tests incl. **temporal-leakage, panel, interval & API tests** | Done |
 
 ## Quickstart
 
@@ -191,8 +196,16 @@ Dockerfile  docker-compose.yml
 reports/       backtest_predictions.csv  anomalies.csv  state_segments.csv  (generated)
 ```
 
+## Deployment
+
+The image self-builds its warehouse on first boot (`docker/entrypoint.sh`), so a
+single container runs anywhere. See [`docs/DEPLOY.md`](docs/DEPLOY.md) for Docker
+Compose, Render (`render.yaml`), Streamlit Community Cloud (`PULSE_AUTO_BUILD=1`),
+and Fly.io / Cloud Run. A shareable, self-contained snapshot dashboard builds via
+`make artifact`.
+
 ## Roadmap / possible extensions
 
-- District- and category-level forecasts; prediction intervals (quantile models).
-- A scheduled job that re-runs ingestion + quality checks when a new quarter lands.
-- Choropleth maps in the dashboard (state/district GeoJSON).
+- Quantile-regression intervals per grain (current bands are empirical residuals).
+- District-level choropleth and category drill-downs in the map tab.
+- Persist the warehouse to object storage so deploys skip the cold-start build.

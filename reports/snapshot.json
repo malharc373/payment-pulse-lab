@@ -1,0 +1,601 @@
+{
+  "meta": {
+    "warehouse": "/Users/malharfalke/Projects/UPI_reliabilty/data/warehouse/pulse.duckdb",
+    "first_quarter": "2018Q1",
+    "latest_quarter": "2024Q4",
+    "states": 36
+  },
+  "trend": [
+    {
+      "q": "2018Q1",
+      "value_cr": 17183.4,
+      "count_bn": 0.13,
+      "ticket": 1278.0
+    },
+    {
+      "q": "2018Q2",
+      "value_cr": 30437.6,
+      "count_bn": 0.19,
+      "ticket": 1624.0
+    },
+    {
+      "q": "2018Q3",
+      "value_cr": 47510.6,
+      "count_bn": 0.34,
+      "ticket": 1392.0
+    },
+    {
+      "q": "2018Q4",
+      "value_cr": 67174.3,
+      "count_bn": 0.42,
+      "ticket": 1610.0
+    },
+    {
+      "q": "2019Q1",
+      "value_cr": 99003.0,
+      "count_bn": 0.71,
+      "ticket": 1396.0
+    },
+    {
+      "q": "2019Q2",
+      "value_cr": 135422.2,
+      "count_bn": 0.82,
+      "ticket": 1661.0
+    },
+    {
+      "q": "2019Q3",
+      "value_cr": 167256.5,
+      "count_bn": 1.1,
+      "ticket": 1527.0
+    },
+    {
+      "q": "2019Q4",
+      "value_cr": 225990.0,
+      "count_bn": 1.46,
+      "ticket": 1547.0
+    },
+    {
+      "q": "2020Q1",
+      "value_cr": 269712.0,
+      "count_bn": 1.62,
+      "ticket": 1662.0
+    },
+    {
+      "q": "2020Q2",
+      "value_cr": 264615.4,
+      "count_bn": 1.45,
+      "ticket": 1827.0
+    },
+    {
+      "q": "2020Q3",
+      "value_cr": 390206.8,
+      "count_bn": 2.03,
+      "ticket": 1919.0
+    },
+    {
+      "q": "2020Q4",
+      "value_cr": 539588.0,
+      "count_bn": 2.87,
+      "ticket": 1881.0
+    },
+    {
+      "q": "2021Q1",
+      "value_cr": 628427.9,
+      "count_bn": 3.46,
+      "ticket": 1818.0
+    },
+    {
+      "q": "2021Q2",
+      "value_cr": 747650.6,
+      "count_bn": 3.94,
+      "ticket": 1897.0
+    },
+    {
+      "q": "2021Q3",
+      "value_cr": 921674.8,
+      "count_bn": 5.26,
+      "ticket": 1751.0
+    },
+    {
+      "q": "2021Q4",
+      "value_cr": 1162135.9,
+      "count_bn": 6.63,
+      "ticket": 1754.0
+    },
+    {
+      "q": "2022Q1",
+      "value_cr": 1323969.9,
+      "count_bn": 7.59,
+      "ticket": 1744.0
+    },
+    {
+      "q": "2022Q2",
+      "value_cr": 1550426.8,
+      "count_bn": 9.13,
+      "ticket": 1698.0
+    },
+    {
+      "q": "2022Q3",
+      "value_cr": 1660770.7,
+      "count_bn": 10.55,
+      "ticket": 1575.0
+    },
+    {
+      "q": "2022Q4",
+      "value_cr": 1891497.4,
+      "count_bn": 12.03,
+      "ticket": 1572.0
+    },
+    {
+      "q": "2023Q1",
+      "value_cr": 2051406.9,
+      "count_bn": 13.09,
+      "ticket": 1567.0
+    },
+    {
+      "q": "2023Q2",
+      "value_cr": 2291864.3,
+      "count_bn": 15.11,
+      "ticket": 1517.0
+    },
+    {
+      "q": "2023Q3",
+      "value_cr": 2401227.7,
+      "count_bn": 17.04,
+      "ticket": 1409.0
+    },
+    {
+      "q": "2023Q4",
+      "value_cr": 2704738.5,
+      "count_bn": 19.02,
+      "ticket": 1422.0
+    },
+    {
+      "q": "2024Q1",
+      "value_cr": 2945858.2,
+      "count_bn": 21.24,
+      "ticket": 1387.0
+    },
+    {
+      "q": "2024Q2",
+      "value_cr": 3182051.7,
+      "count_bn": 24.03,
+      "ticket": 1324.0
+    },
+    {
+      "q": "2024Q3",
+      "value_cr": 3234696.8,
+      "count_bn": 25.82,
+      "ticket": 1253.0
+    },
+    {
+      "q": "2024Q4",
+      "value_cr": 3599880.1,
+      "count_bn": 28.22,
+      "ticket": 1276.0
+    }
+  ],
+  "category_mix": [
+    {
+      "category": "Peer-to-peer payments",
+      "pct": 74.0
+    },
+    {
+      "category": "Merchant payments",
+      "pct": 22.4
+    },
+    {
+      "category": "Recharge & bill payments",
+      "pct": 3.5
+    },
+    {
+      "category": "Financial Services",
+      "pct": 0.1
+    },
+    {
+      "category": "Others",
+      "pct": 0.0
+    }
+  ],
+  "top_states": [
+    {
+      "state": "karnataka",
+      "value_cr": 415182.0
+    },
+    {
+      "state": "maharashtra",
+      "value_cr": 415102.8
+    },
+    {
+      "state": "telangana",
+      "value_cr": 385905.1
+    },
+    {
+      "state": "andhra-pradesh",
+      "value_cr": 345201.6
+    },
+    {
+      "state": "uttar-pradesh",
+      "value_cr": 321410.7
+    },
+    {
+      "state": "rajasthan",
+      "value_cr": 279304.9
+    },
+    {
+      "state": "bihar",
+      "value_cr": 209892.7
+    },
+    {
+      "state": "madhya-pradesh",
+      "value_cr": 200330.5
+    },
+    {
+      "state": "west-bengal",
+      "value_cr": 181010.0
+    },
+    {
+      "state": "odisha",
+      "value_cr": 130545.8
+    }
+  ],
+  "forecast": {
+    "quarter": "2025Q1",
+    "model": "seasonal_yoy",
+    "rows": [
+      {
+        "state": "maharashtra",
+        "champ_cr": 451934.5,
+        "lo_cr": 330746.7,
+        "hi_cr": 521979.1,
+        "growth": 8.9
+      },
+      {
+        "state": "karnataka",
+        "champ_cr": 446419.1,
+        "lo_cr": 326710.3,
+        "hi_cr": 515608.9,
+        "growth": 7.5
+      },
+      {
+        "state": "telangana",
+        "champ_cr": 396721.8,
+        "lo_cr": 290339.5,
+        "hi_cr": 458209.1,
+        "growth": 2.8
+      },
+      {
+        "state": "andhra-pradesh",
+        "champ_cr": 371094.4,
+        "lo_cr": 271584.1,
+        "hi_cr": 428609.7,
+        "growth": 7.5
+      },
+      {
+        "state": "uttar-pradesh",
+        "champ_cr": 352748.4,
+        "lo_cr": 258157.7,
+        "hi_cr": 407420.3,
+        "growth": 9.8
+      },
+      {
+        "state": "rajasthan",
+        "champ_cr": 317708.5,
+        "lo_cr": 232513.8,
+        "hi_cr": 366949.6,
+        "growth": 13.7
+      },
+      {
+        "state": "bihar",
+        "champ_cr": 239590.5,
+        "lo_cr": 175343.5,
+        "hi_cr": 276724.2,
+        "growth": 14.1
+      },
+      {
+        "state": "madhya-pradesh",
+        "champ_cr": 228265.4,
+        "lo_cr": 167055.2,
+        "hi_cr": 263643.9,
+        "growth": 13.9
+      },
+      {
+        "state": "west-bengal",
+        "champ_cr": 206020.4,
+        "lo_cr": 150775.3,
+        "hi_cr": 237951.1,
+        "growth": 13.8
+      },
+      {
+        "state": "odisha",
+        "champ_cr": 154232.6,
+        "lo_cr": 112874.6,
+        "hi_cr": 178136.9,
+        "growth": 18.1
+      },
+      {
+        "state": "gujarat",
+        "champ_cr": 117958.8,
+        "lo_cr": 86327.7,
+        "hi_cr": 136241.0,
+        "growth": 9.6
+      },
+      {
+        "state": "tamil-nadu",
+        "champ_cr": 113870.9,
+        "lo_cr": 83336.0,
+        "hi_cr": 131519.5,
+        "growth": 4.7
+      }
+    ]
+  },
+  "segments": {
+    "k": 5,
+    "silhouette": 0.29,
+    "clusters": [
+      {
+        "cluster": 0,
+        "n": 12,
+        "yoy": 41.0,
+        "tpu": 50.0,
+        "ticket": 1346.0,
+        "states": [
+          "andhra-pradesh",
+          "bihar",
+          "jharkhand",
+          "karnataka",
+          "madhya-pradesh",
+          "maharashtra",
+          "odisha",
+          "rajasthan",
+          "sikkim",
+          "telangana",
+          "uttar-pradesh",
+          "west-bengal"
+        ]
+      },
+      {
+        "cluster": 1,
+        "n": 4,
+        "yoy": 40.0,
+        "tpu": 20.0,
+        "ticket": 1816.0,
+        "states": [
+          "ladakh",
+          "meghalaya",
+          "mizoram",
+          "nagaland"
+        ]
+      },
+      {
+        "cluster": 2,
+        "n": 13,
+        "yoy": 30.0,
+        "tpu": 26.0,
+        "ticket": 1236.0,
+        "states": [
+          "chandigarh",
+          "dadra-&-nagar-haveli-&-daman-&-diu",
+          "delhi",
+          "goa",
+          "gujarat",
+          "haryana",
+          "himachal-pradesh",
+          "kerala",
+          "puducherry",
+          "punjab",
+          "tamil-nadu",
+          "tripura",
+          "uttarakhand"
+        ]
+      },
+      {
+        "cluster": 3,
+        "n": 6,
+        "yoy": 56.0,
+        "tpu": 33.0,
+        "ticket": 1331.0,
+        "states": [
+          "andaman-&-nicobar-islands",
+          "arunachal-pradesh",
+          "assam",
+          "chhattisgarh",
+          "jammu-&-kashmir",
+          "lakshadweep"
+        ]
+      },
+      {
+        "cluster": 4,
+        "n": 1,
+        "yoy": 113.0,
+        "tpu": 8.0,
+        "ticket": 2175.0,
+        "states": [
+          "manipur"
+        ]
+      }
+    ]
+  },
+  "map": [
+    {
+      "state": "karnataka",
+      "value_cr": 415182.0,
+      "yoy": 28.1
+    },
+    {
+      "state": "maharashtra",
+      "value_cr": 415102.8,
+      "yoy": 34.0
+    },
+    {
+      "state": "telangana",
+      "value_cr": 385905.1,
+      "yoy": 23.8
+    },
+    {
+      "state": "andhra-pradesh",
+      "value_cr": 345201.6,
+      "yoy": 23.2
+    },
+    {
+      "state": "uttar-pradesh",
+      "value_cr": 321410.7,
+      "yoy": 42.4
+    },
+    {
+      "state": "rajasthan",
+      "value_cr": 279304.9,
+      "yoy": 35.2
+    },
+    {
+      "state": "bihar",
+      "value_cr": 209892.7,
+      "yoy": 46.3
+    },
+    {
+      "state": "madhya-pradesh",
+      "value_cr": 200330.5,
+      "yoy": 40.4
+    },
+    {
+      "state": "west-bengal",
+      "value_cr": 181010.0,
+      "yoy": 44.9
+    },
+    {
+      "state": "odisha",
+      "value_cr": 130545.8,
+      "yoy": 33.4
+    },
+    {
+      "state": "tamil-nadu",
+      "value_cr": 108763.3,
+      "yoy": 24.6
+    },
+    {
+      "state": "gujarat",
+      "value_cr": 107601.5,
+      "yoy": 35.3
+    },
+    {
+      "state": "delhi",
+      "value_cr": 105706.0,
+      "yoy": 32.2
+    },
+    {
+      "state": "haryana",
+      "value_cr": 103195.9,
+      "yoy": 31.9
+    },
+    {
+      "state": "jharkhand",
+      "value_cr": 70401.1,
+      "yoy": 41.2
+    },
+    {
+      "state": "chhattisgarh",
+      "value_cr": 57682.8,
+      "yoy": 42.8
+    },
+    {
+      "state": "assam",
+      "value_cr": 38278.6,
+      "yoy": 34.0
+    },
+    {
+      "state": "punjab",
+      "value_cr": 28912.6,
+      "yoy": 25.1
+    },
+    {
+      "state": "kerala",
+      "value_cr": 27364.0,
+      "yoy": 21.6
+    },
+    {
+      "state": "uttarakhand",
+      "value_cr": 19490.9,
+      "yoy": 31.6
+    },
+    {
+      "state": "jammu-&-kashmir",
+      "value_cr": 16095.1,
+      "yoy": 72.9
+    },
+    {
+      "state": "himachal-pradesh",
+      "value_cr": 6373.7,
+      "yoy": 32.0
+    },
+    {
+      "state": "goa",
+      "value_cr": 5656.3,
+      "yoy": 27.7
+    },
+    {
+      "state": "arunachal-pradesh",
+      "value_cr": 3508.0,
+      "yoy": 45.4
+    },
+    {
+      "state": "dadra-&-nagar-haveli-&-daman-&-diu",
+      "value_cr": 2394.5,
+      "yoy": 36.4
+    },
+    {
+      "state": "tripura",
+      "value_cr": 2241.0,
+      "yoy": 33.2
+    },
+    {
+      "state": "chandigarh",
+      "value_cr": 2050.1,
+      "yoy": 25.9
+    },
+    {
+      "state": "puducherry",
+      "value_cr": 1996.5,
+      "yoy": 17.3
+    },
+    {
+      "state": "meghalaya",
+      "value_cr": 1967.5,
+      "yoy": 41.8
+    },
+    {
+      "state": "nagaland",
+      "value_cr": 1395.9,
+      "yoy": 44.3
+    },
+    {
+      "state": "sikkim",
+      "value_cr": 1264.1,
+      "yoy": 47.2
+    },
+    {
+      "state": "manipur",
+      "value_cr": 1206.2,
+      "yoy": 77.4
+    },
+    {
+      "state": "ladakh",
+      "value_cr": 1085.4,
+      "yoy": 56.3
+    },
+    {
+      "state": "andaman-&-nicobar-islands",
+      "value_cr": 892.1,
+      "yoy": 42.3
+    },
+    {
+      "state": "mizoram",
+      "value_cr": 446.1,
+      "yoy": 26.0
+    },
+    {
+      "state": "lakshadweep",
+      "value_cr": 24.8,
+      "yoy": 106.8
+    }
+  ]
+}

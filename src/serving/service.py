@@ -13,6 +13,7 @@ import duckdb
 import pandas as pd
 
 from src import config
+from src.modeling import intervals, panels
 from src.modeling.anomaly_detection import detect
 from src.modeling.features import build_features, build_forecast_frame
 from src.modeling.forecast import make_ridge
@@ -164,25 +165,126 @@ class InsightService:
         return sorted(self._sql("SELECT DISTINCT state FROM state_txn_quarter").state)
 
     # -- model-backed outputs (cached) --------------------------------
-    @functools.cached_property
-    def _forecast_df(self) -> pd.DataFrame:
-        train = build_features(db_path=self.db_path)
-        fut = build_forecast_frame(db_path=self.db_path)
+    def _forecast(self, panel: pd.DataFrame) -> pd.DataFrame:
+        """Generic next-quarter forecast for any grain (state/category/district).
+
+        Champion = seasonal_yoy (backtest winner); ridge shown alongside; interval
+        from the champion's empirical log-residuals on the same grain.
+        """
+        train = build_features(panel=panel)
+        fut = build_forecast_frame(panel=panel)
+        empty_cols = ["entity", "period_key", "forecast_champion", "forecast_ridge",
+                      "forecast_lo", "forecast_hi", "last_actual", "growth_vs_last_pct"]
+        if train.empty or fut.empty:
+            return pd.DataFrame(columns=empty_cols)
+        q_lo, q_hi = intervals.residual_log_quantiles(train)
         ridge_pred = make_ridge().fit(train).predict(fut)
-        out = fut[["state", "year", "quarter", "period_key"]].copy()
+
+        out = fut[["state", "period_key"]].copy().rename(columns={"state": "entity"})
         out["forecast_champion"] = fut["seasonal_yoy"].to_numpy()
         out["forecast_ridge"] = ridge_pred
+        lo, hi = intervals.add_intervals(out["forecast_champion"], q_lo, q_hi)
+        out["forecast_lo"], out["forecast_hi"] = lo, hi
         out["last_actual"] = fut["naive_last"].to_numpy()
         out["growth_vs_last_pct"] = 100 * (out["forecast_champion"] / out["last_actual"] - 1)
         return out
 
+    @functools.cached_property
+    def _forecast_df(self) -> pd.DataFrame:
+        return self._forecast(panels.state_panel(self.db_path))
+
+    def _label(self) -> str:
+        return period_label(int(self._forecast_df.period_key.iloc[0]))
+
     def forecast_next_quarter(self) -> dict:
         df = self._forecast_df.sort_values("forecast_champion", ascending=False)
+        states = df.rename(columns={"entity": "state"}).drop(columns=["period_key"])
         return _jsonable({
-            "quarter": period_label(int(df.period_key.iloc[0])),
+            "quarter": self._label(),
             "champion_model": CHAMPION,
-            "states": df.drop(columns=["year", "quarter", "period_key"]).to_dict("records"),
+            "states": states.to_dict("records"),
         })
+
+    @functools.cached_property
+    def _forecast_categories_df(self) -> pd.DataFrame:
+        df = self._forecast(panels.category_panel(self.db_path))
+        parts = df["entity"].map(panels.split_entity)
+        df["state"] = parts.map(lambda t: t[0])
+        df["category"] = parts.map(lambda t: t[1])
+        return df
+
+    def forecast_categories(self, top: int = 25) -> dict:
+        df = self._forecast_categories_df.copy()
+        df["outperformance"] = df["growth_vs_last_pct"]
+        df = df.sort_values("forecast_champion", ascending=False).head(top)
+        cols = ["state", "category", "forecast_champion", "forecast_lo", "forecast_hi",
+                "last_actual", "growth_vs_last_pct"]
+        return _jsonable({"quarter": self._label(), "champion_model": CHAMPION,
+                          "rows": df[cols].to_dict("records")})
+
+    @functools.cached_property
+    def _forecast_districts_df(self) -> pd.DataFrame:
+        df = self._forecast(panels.district_panel(self.db_path))
+        parts = df["entity"].map(panels.split_entity)
+        df["state"] = parts.map(lambda t: t[0])
+        df["district"] = parts.map(lambda t: t[1])
+        return df
+
+    def forecast_districts(self, top: int = 30, state: str | None = None) -> dict:
+        df = self._forecast_districts_df.copy()
+        if state:
+            df = df[df["state"] == state]
+        df = df.sort_values("forecast_champion", ascending=False).head(top)
+        cols = ["state", "district", "forecast_champion", "forecast_lo", "forecast_hi",
+                "last_actual", "growth_vs_last_pct"]
+        return _jsonable({"quarter": self._label(), "champion_model": CHAMPION,
+                          "rows": df[cols].to_dict("records")})
+
+    def state_forecast(self, state: str) -> dict | None:
+        row = self._forecast_df[self._forecast_df.entity == state]
+        if row.empty:
+            return None
+        r = row.iloc[0]
+        return _jsonable({
+            "state": state, "quarter": self._label(),
+            "forecast_champion": r.forecast_champion, "forecast_ridge": r.forecast_ridge,
+            "forecast_lo": r.forecast_lo, "forecast_hi": r.forecast_hi,
+            "last_actual": r.last_actual, "growth_vs_last_pct": r.growth_vs_last_pct,
+        })
+
+    def state_cluster(self, state: str) -> int | None:
+        labelled, _, _ = self._segments
+        hit = labelled[labelled.state == state]
+        return int(hit.cluster.iloc[0]) if not hit.empty else None
+
+    def state_detail(self, state: str) -> dict:
+        """Everything about one state — for the dashboard drill-down."""
+        anoms = self._anomaly_df[self._anomaly_df.state == state].head(5)
+        return _jsonable({
+            "state": state,
+            "history": self.state_history(state),
+            "forecast": self.state_forecast(state),
+            "cluster": self.state_cluster(state),
+            "anomalies": anoms[["year", "quarter", "qoq_amt", "value_user_gap",
+                                "anomaly_score"]].to_dict("records"),
+        })
+
+    def state_map_metrics(self) -> list[dict]:
+        """Per-state latest value + YoY growth, for the choropleth."""
+        return self._sql(
+            """
+            WITH latest AS (SELECT MAX(period_key) pk FROM state_txn_quarter),
+                 yoy AS (
+                    SELECT state, txn_amount,
+                           100.0*(txn_amount - LAG(txn_amount,4) OVER w)
+                                /NULLIF(LAG(txn_amount,4) OVER w,0) AS yoy_pct
+                    FROM state_txn_quarter
+                    WINDOW w AS (PARTITION BY state ORDER BY period_key)
+                    QUALIFY period_key = (SELECT pk FROM latest))
+            SELECT state, txn_amount, ROUND(yoy_pct,1) AS yoy_pct FROM yoy
+            ORDER BY txn_amount DESC
+            """
+        ).to_dict("records")
 
     @functools.cached_property
     def _anomaly_df(self) -> pd.DataFrame:
