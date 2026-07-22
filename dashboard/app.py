@@ -21,6 +21,18 @@ import streamlit as st
 warnings.simplefilter("ignore")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# On Streamlit Community Cloud, deploy-time config arrives as st.secrets. Bridge
+# any scalar secrets into os.environ so the pipeline/config (which read env vars,
+# e.g. PULSE_AUTO_BUILD / PULSE_DB_PATH) pick them up without a Streamlit dep.
+import os  # noqa: E402
+
+try:
+    for _k, _v in dict(st.secrets).items():
+        if isinstance(_v, (str, int, float, bool)):
+            os.environ.setdefault(_k, str(_v))
+except Exception:
+    pass  # no secrets file locally — fine
+
 from src.serving import geo  # noqa: E402
 from src.serving.service import InsightService, warehouse_exists  # noqa: E402
 
