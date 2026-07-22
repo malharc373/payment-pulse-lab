@@ -1,0 +1,13 @@
+# Core pipeline
+duckdb>=1.0
+requests>=2.31
+pandas>=2.0
+
+# Testing
+pytest>=8.0
+
+# --- added in later phases (modeling / API / dashboard) ---
+# scikit-learn>=1.4
+# fastapi>=0.110
+# uvicorn>=0.29
+# streamlit>=1.33

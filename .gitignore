@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Data (fetched/derived, reproducible via the pipeline)
+data/raw/
+data/warehouse/
+*.duckdb
+*.duckdb.wal
+
+# Env / OS
+.env
+.DS_Store
