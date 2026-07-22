@@ -9,6 +9,7 @@ numpy>=1.26
 
 # Testing
 pytest>=8.0
+httpx>=0.24
 
 # Serving (Phase 3 — API & dashboard)
 fastapi>=0.110
