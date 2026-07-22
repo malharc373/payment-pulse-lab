@@ -1,4 +1,5 @@
-.PHONY: help setup pipeline pipeline-full kpis growth anomaly test clean
+.PHONY: help setup pipeline pipeline-full kpis growth anomaly-sql \
+        backtest anomaly segment models test clean
 
 PY := ./.venv/bin/python
 PIP := ./.venv/bin/pip
@@ -24,8 +25,19 @@ kpis:  ## Print headline KPI queries
 growth:  ## Print growth-analysis queries
 	$(PY) -m scripts.run_sql src/analytics/growth_analysis.sql
 
-anomaly:  ## Print anomaly-detection queries
+anomaly-sql:  ## Print SQL anomaly queries (robust z-score / IQR)
 	$(PY) -m scripts.run_sql src/analytics/anomaly_queries.sql
+
+backtest:  ## Walk-forward forecasting backtest (baselines vs models)
+	$(PY) -m scripts.run_backtest --holdout 8
+
+anomaly:  ## Multivariate (Isolation Forest) anomaly detection
+	$(PY) -m scripts.run_anomaly --top 20
+
+segment:  ## Cluster states into behavioural archetypes
+	$(PY) -m scripts.run_segmentation
+
+models: backtest anomaly segment  ## Run all Phase-2 modeling steps
 
 test:  ## Run the unit test suite
 	$(PY) -m pytest -q

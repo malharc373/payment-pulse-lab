@@ -10,33 +10,39 @@ anomalous enough to investigate?*
 > anonymized; insights are framed as **areas for investigation / growth opportunities**,
 > never claims about individual users, merchants, or fraud.
 
-## What's built (Phase 1 — data & SQL foundation)
+## What's built
 
 | Layer | Module | Status |
 |---|---|---|
-| **Ingestion** | `src/ingestion/` — dynamic file discovery, cached concurrent fetch, per-shape parsers | ✅ |
-| **Warehouse** | `src/transforms/load_duckdb.py` — typed DuckDB tables + helper views | ✅ |
-| **Data quality** | `src/transforms/quality_checks.py` — 7 checks (grain, nulls, panel completeness, reconciliation) | ✅ |
-| **SQL analytics** | `src/analytics/*.sql` — KPIs, QoQ/YoY growth, concentration (HHI), robust anomaly flags | ✅ |
-| **Tests** | `tests/` — 14 unit tests (parsers, loader, checks) | ✅ |
-| Modeling | forecasting (walk-forward), anomaly ML, segmentation | ⏳ Phase 2 |
+| **Ingestion** | `src/ingestion/` — dynamic file discovery, cached concurrent fetch, per-shape parsers | ✅ Phase 1 |
+| **Warehouse** | `src/transforms/load_duckdb.py` — typed DuckDB tables + helper views | ✅ Phase 1 |
+| **Data quality** | `src/transforms/quality_checks.py` — 7 checks (grain, nulls, panel completeness, reconciliation) | ✅ Phase 1 |
+| **SQL analytics** | `src/analytics/*.sql` — KPIs, QoQ/YoY growth, concentration (HHI), robust anomaly flags | ✅ Phase 1 |
+| **Forecasting** | `src/modeling/` + `src/evaluation/` — time-valid features, naive baselines, ridge & GBM, **walk-forward backtest** | ✅ Phase 2 |
+| **Anomaly (ML)** | `src/modeling/anomaly_detection.py` — Isolation Forest over joint behaviour signals | ✅ Phase 2 |
+| **Segmentation** | `src/modeling/segmentation.py` — K-Means state archetypes (silhouette-selected k) | ✅ Phase 2 |
+| **Tests** | `tests/` — 26 unit tests incl. **temporal-leakage tests** | ✅ |
 | API + dashboard | FastAPI + Streamlit, Docker | ⏳ Phase 3 |
 
 ## Quickstart
 
 ```bash
 make setup                 # venv + dependencies
-make pipeline              # discover -> fetch -> load -> validate  (~45s for 2 yrs)
+make pipeline-full         # discover -> fetch -> load -> validate (2018-2024)
 make kpis                  # headline KPI queries
 make growth                # growth analysis
-make anomaly               # anomaly detection
-make test                  # unit tests
+make anomaly-sql           # SQL anomaly flags (robust z-score / IQR)
+make backtest              # walk-forward forecasting: baselines vs models
+make anomaly               # Isolation Forest anomaly detection
+make segment               # cluster states into archetypes
+make test                  # unit tests (incl. leakage tests)
 ```
 
 Or directly:
 
 ```bash
-python -m scripts.run_pipeline --min-year 2022 --max-year 2023
+python -m scripts.run_pipeline --min-year 2018 --max-year 2024
+python -m scripts.run_backtest --holdout 8
 python -m scripts.run_sql src/analytics/growth_analysis.sql --limit 10
 ```
 
@@ -79,6 +85,34 @@ See [`docs/data_dictionary.md`](docs/data_dictionary.md) for full column definit
 - **Anomalies**: robust z-scores flag the Q4→Q1 seasonal dip; district-level scan
   surfaces outsized single-quarter jumps worth a data-quality/growth look.
 
+## Forecasting (Phase 2)
+
+Predicts **next-quarter transaction value per state** with strict, leakage-free
+methodology — the point of the project is disciplined validation, not an exotic model.
+
+- **Time-valid features** — lagged levels/growth, engagement ratios, category mix,
+  seasonality; every feature for quarter *t* uses only *t-1* and earlier
+  (`groupby(state).shift`), verified by leakage unit tests.
+- **Honest baselines** — random walk, seasonal naive, and seasonal×YoY.
+- **Walk-forward validation** — expanding window over the last 8 quarters; models
+  retrain each fold on strictly-earlier data. No random splits.
+
+**Results (8-quarter holdout, 2023 Q1 – 2024 Q4):**
+
+| Model | WAPE | sMAPE |
+|---|---|---|
+| **seasonal_yoy** (baseline) | **6.76%** | 9.5% |
+| ridge | 7.08% | 10.6% |
+| naive_last | 8.79% | 11.7% |
+| gbm | 14.22% | 12.9% |
+| seasonal_naive | 29.21% | 39.3% |
+
+The disciplined **baseline wins**, with a regularized linear model within a point;
+gradient boosting overfits this short, strongly-trending panel. Reporting that
+honestly — and explaining *why* — is the intended takeaway. See
+[`docs/model_card.md`](docs/model_card.md). Companion models: an **Isolation Forest**
+anomaly detector (joint behaviour signals) and **K-Means** state segmentation.
+
 ## Design choices
 
 - **DuckDB first** — analytical SQL with zero infra; the whole warehouse is one file.
@@ -95,15 +129,16 @@ src/
   ingestion/   discover.py  fetch_pulse_data.py  parsers.py  schema.py
   transforms/  load_duckdb.py  quality_checks.py
   analytics/   kpis.sql  growth_analysis.sql  anomaly_queries.sql
+  modeling/    features.py  baseline.py  forecast.py  anomaly_detection.py  segmentation.py
+  evaluation/  metrics.py  backtest.py
   config.py
-scripts/       run_pipeline.py  run_sql.py
-tests/         test_parsers.py  test_quality_checks.py
-docs/          data_dictionary.md
+scripts/       run_pipeline.py  run_sql.py  run_backtest.py  run_anomaly.py  run_segmentation.py
+tests/         test_parsers.py  test_quality_checks.py  test_features.py  test_metrics.py  test_backtest.py
+docs/          data_dictionary.md  model_card.md
+reports/       backtest_predictions.csv  anomalies.csv  state_segments.csv  (generated)
 ```
 
 ## Roadmap
 
-- **Phase 2 — Modeling**: time-valid features, naïve seasonal baseline, walk-forward
-  backtesting, one forecasting model (regularized GBM), ML anomaly detector, state
-  segmentation. Report MAE/WAPE by state & category.
-- **Phase 3 — Product**: FastAPI endpoints + Streamlit dashboard, Docker, model card.
+- **Phase 3 — Product**: FastAPI endpoints (forecasts, anomalies, growth leaders) +
+  Streamlit dashboard, Docker, architecture diagram.
