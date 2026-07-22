@@ -10,7 +10,8 @@ numpy>=1.26
 # Testing
 pytest>=8.0
 
-# --- added in Phase 3 (API / dashboard) ---
-# fastapi>=0.110
-# uvicorn>=0.29
-# streamlit>=1.33
+# Serving (Phase 3 — API & dashboard)
+fastapi>=0.110
+uvicorn>=0.29
+streamlit>=1.49
+altair>=5.0

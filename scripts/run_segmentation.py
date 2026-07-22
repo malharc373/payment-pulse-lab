@@ -11,7 +11,7 @@ import argparse
 import pandas as pd
 
 from src import config
-from src.modeling.segmentation import PROFILE_FEATURES, segment_states
+from src.modeling.segmentation import segment_states
 
 
 def main(argv: list[str] | None = None) -> int:

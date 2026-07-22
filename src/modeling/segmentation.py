@@ -39,28 +39,34 @@ def build_state_profiles(df: pd.DataFrame | None = None, recent_quarters: int = 
     d["user_growth"] = g["registered_users"].pct_change(4)
     # category shares are already columns: share_merchant, share_peer-to-peer, ...
 
+    # A missing category is a genuine 0 share, not missing data.
+    share_cols = ["share_merchant", "share_peer-to-peer", "share_recharge"]
+    d[share_cols] = d[share_cols].fillna(0.0)
+
     recent = d.groupby("state").tail(recent_quarters)
     prof = recent.groupby("state").agg(
         yoy_growth=("yoy_growth", "mean"),
         txns_per_user=("txns_per_user", "mean"),
         avg_ticket=("avg_ticket", "mean"),
         user_growth=("user_growth", "mean"),
-        **{"share_merchant": ("share_merchant", "mean"),
-           "share_peer-to-peer": ("share_peer-to-peer", "mean"),
-           "share_recharge": ("share_recharge", "mean")},
-    ).replace([np.inf, -np.inf], np.nan).dropna()
-    return prof
+        **{c: (c, "mean") for c in share_cols},
+    ).replace([np.inf, -np.inf], np.nan)
+    # Only require the behavioural metrics; shares are already zero-filled.
+    return prof.dropna(subset=["yoy_growth", "txns_per_user", "avg_ticket", "user_growth"])
 
 
 def choose_k(X: np.ndarray, k_range=range(2, 7), random_state: int = 42) -> tuple[int, dict[int, float]]:
+    """Pick k by silhouette. Silhouette needs 2 <= k <= n_samples-1, so for very
+    small inputs we fall back to k=min(2, n_samples)."""
     scores = {}
     for k in k_range:
         if k >= len(X):
             break
         labels = KMeans(n_clusters=k, n_init=10, random_state=random_state).fit_predict(X)
         scores[k] = silhouette_score(X, labels)
-    best_k = max(scores, key=scores.get)
-    return best_k, scores
+    if not scores:
+        return min(2, len(X)), {}
+    return max(scores, key=scores.get), scores
 
 
 def segment_states(df: pd.DataFrame | None = None, k: int | None = None,
@@ -82,6 +88,7 @@ def segment_states(df: pd.DataFrame | None = None, k: int | None = None,
         .assign(n_states=prof.groupby("cluster").size())
         .reset_index()
     )
-    meta = {"k": k, "silhouette_scores": scores,
-            "silhouette": silhouette_score(X, km.labels_)}
+    # Silhouette is only defined for 2 <= k <= n_samples-1.
+    sil = float(silhouette_score(X, km.labels_)) if 1 < k < len(X) else float("nan")
+    meta = {"k": k, "silhouette_scores": scores, "silhouette": sil}
     return prof.reset_index(), cluster_profile, meta

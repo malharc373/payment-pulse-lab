@@ -91,19 +91,19 @@ def _reindex_full_grid(panel: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def build_features(panel: pd.DataFrame | None = None, db_path=None) -> pd.DataFrame:
-    """Return a modelling frame with the target and strictly-lagged features.
+# Core lags that must exist for a row to be modellable at all.
+_CORE_LAGS = ["lag1_log_amt", "lag4_log_amt", "roll4_log_amt", "qoq_amt_lag1"]
 
-    Rows without enough history (target NaN, or missing core lags) are dropped.
+
+def _engineer(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute all strictly-lagged features + baseline columns on a gridded panel.
+
+    Every derived column reads only ``shift(k>=1)`` values, so a row for quarter
+    *t* never sees *t*'s own target — the guarantee our leakage tests enforce.
     """
-    if panel is None:
-        panel = load_state_panel(db_path)
-    df = _reindex_full_grid(panel)
-
     g = df.groupby("state", sort=False)
     df[LOG_TARGET] = np.log1p(df[TARGET])
     log_amt = np.log1p(df[TARGET])
-    log_cnt = np.log1p(df["txn_count"])
 
     # --- Lagged level features (log space) ---
     for k in (1, 2, 4):
@@ -138,15 +138,55 @@ def build_features(panel: pd.DataFrame | None = None, db_path=None) -> pd.DataFr
     df["naive_last"] = g[TARGET].shift(1)                 # last quarter
     df["seasonal_naive"] = g[TARGET].shift(4)             # same quarter last year
     df["seasonal_yoy"] = g[TARGET].shift(4) * (g[TARGET].shift(1) / g[TARGET].shift(5))
-
-    feature_cols = FEATURE_COLUMNS
-    # Keep only rows with a real target and all model features present.
-    need = [TARGET, "lag1_log_amt", "lag4_log_amt", "roll4_log_amt", "qoq_amt_lag1"]
-    df = df.dropna(subset=need).reset_index(drop=True)
-    # Remaining sparse features (early-history growth rates) -> 0 is a safe fill
-    # in log/ratio space and never uses future info.
-    df[feature_cols] = df[feature_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
     return df
+
+
+def _fill_sparse(df: pd.DataFrame) -> pd.DataFrame:
+    """Fill remaining sparse ratio/growth features (after core-lag rows are kept).
+
+    Applied only once the caller has dropped rows lacking the core lags, so this
+    never resurrects garbage early-history rows — it just zero-fills the handful
+    of higher-order ratios (e.g. yoy needing 5 quarters) in kept rows. Safe in
+    log/ratio space and never uses future information.
+    """
+    df = df.copy()
+    df[FEATURE_COLUMNS] = df[FEATURE_COLUMNS].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    return df
+
+
+def build_features(panel: pd.DataFrame | None = None, db_path=None) -> pd.DataFrame:
+    """Return the training frame: strictly-lagged features + a real target.
+
+    Rows without a target or without the core lags are dropped.
+    """
+    if panel is None:
+        panel = load_state_panel(db_path)
+    df = _engineer(_reindex_full_grid(panel))
+    df = df.dropna(subset=[TARGET] + _CORE_LAGS).reset_index(drop=True)
+    return _fill_sparse(df)
+
+
+def build_forecast_frame(panel: pd.DataFrame | None = None, db_path=None) -> pd.DataFrame:
+    """Return one feature row per state for the **next, not-yet-observed** quarter.
+
+    Appends a future quarter (target unknown) to the panel, engineers the same
+    lagged features from known history, and returns those future rows. Their
+    baseline columns (``seasonal_yoy`` etc.) are also populated, so both learned
+    and naive next-quarter forecasts are available.
+    """
+    if panel is None:
+        panel = load_state_panel(db_path)
+    next_ord = int(panel["period_ord"].max()) + 1
+    year, q = next_ord // 4, next_ord % 4 + 1
+    future = pd.DataFrame({
+        "state": panel["state"].unique(),
+        "year": year, "quarter": q, "period_key": year * 10 + q,
+        "period_ord": next_ord,
+    })
+    combined = pd.concat([panel, future], ignore_index=True)
+    df = _engineer(_reindex_full_grid(combined))
+    fut = df[(df["period_ord"] == next_ord) & df[_CORE_LAGS].notna().all(axis=1)]
+    return _fill_sparse(fut.reset_index(drop=True))
 
 
 FEATURE_COLUMNS = [

@@ -1,0 +1,47 @@
+# Brings up the full stack: build the warehouse once, then serve API + dashboard.
+# The warehouse lives in a named volume so it persists and is shared.
+#
+#   docker compose up --build
+#   API   -> http://localhost:8000/docs
+#   Dash  -> http://localhost:8501
+
+services:
+  # One-shot: fetch + load + validate the warehouse into the shared volume.
+  pipeline:
+    build: .
+    command: python -m scripts.run_pipeline --min-year 2020 --max-year 2024
+    environment:
+      - PULSE_DB_PATH=/app/data/warehouse/pulse.duckdb
+    volumes:
+      - pulse-data:/app/data
+
+  api:
+    build: .
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+    environment:
+      - PULSE_DB_PATH=/app/data/warehouse/pulse.duckdb
+    ports:
+      - "8000:8000"
+    volumes:
+      - pulse-data:/app/data
+    depends_on:
+      pipeline:
+        condition: service_completed_successfully
+
+  dashboard:
+    build: .
+    command: >
+      streamlit run dashboard/app.py
+      --server.port 8501 --server.address 0.0.0.0 --server.headless true
+    environment:
+      - PULSE_DB_PATH=/app/data/warehouse/pulse.duckdb
+    ports:
+      - "8501:8501"
+    volumes:
+      - pulse-data:/app/data
+    depends_on:
+      pipeline:
+        condition: service_completed_successfully
+
+volumes:
+  pulse-data:

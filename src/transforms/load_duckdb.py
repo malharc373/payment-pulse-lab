@@ -1,8 +1,8 @@
 """Build the DuckDB warehouse from parsed Pulse rows.
 
 Tables are recreated from scratch on each load (the dataset is small and this
-guarantees no duplicate rows across re-runs). A ``dim_period`` helper adds a
-sortable integer period key so downstream SQL can order quarters correctly.
+guarantees no duplicate rows across re-runs). Helper views expose a sortable
+integer ``period_key`` so downstream SQL can order quarters correctly.
 """
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ import pandas as pd
 
 from src import config
 from src.ingestion import parsers
-from src.ingestion.discover import PulseFile
 from src.ingestion.fetch_pulse_data import FetchResult
 from src.ingestion.schema import TABLE_COLUMNS
 

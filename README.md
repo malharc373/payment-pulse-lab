@@ -21,8 +21,10 @@ anomalous enough to investigate?*
 | **Forecasting** | `src/modeling/` + `src/evaluation/` — time-valid features, naive baselines, ridge & GBM, **walk-forward backtest** | ✅ Phase 2 |
 | **Anomaly (ML)** | `src/modeling/anomaly_detection.py` — Isolation Forest over joint behaviour signals | ✅ Phase 2 |
 | **Segmentation** | `src/modeling/segmentation.py` — K-Means state archetypes (silhouette-selected k) | ✅ Phase 2 |
-| **Tests** | `tests/` — 26 unit tests incl. **temporal-leakage tests** | ✅ |
-| API + dashboard | FastAPI + Streamlit, Docker | ⏳ Phase 3 |
+| **API** | `src/api/` + `src/serving/` — FastAPI over an `InsightService` (11 endpoints) | ✅ Phase 3 |
+| **Dashboard** | `dashboard/app.py` — Streamlit + Altair, CVD-validated palette | ✅ Phase 3 |
+| **Deploy / CI** | Dockerfile + docker-compose; GitHub Actions (lint + tests + image build) | ✅ Phase 3 |
+| **Tests** | `tests/` — 33 unit tests incl. **temporal-leakage & API tests** | ✅ |
 
 ## Quickstart
 
@@ -35,7 +37,15 @@ make anomaly-sql           # SQL anomaly flags (robust z-score / IQR)
 make backtest              # walk-forward forecasting: baselines vs models
 make anomaly               # Isolation Forest anomaly detection
 make segment               # cluster states into archetypes
+make api                   # FastAPI at http://localhost:8000/docs
+make dashboard             # Streamlit at http://localhost:8501
 make test                  # unit tests (incl. leakage tests)
+```
+
+Or the whole stack in Docker (builds the warehouse, then serves API + dashboard):
+
+```bash
+docker compose up --build   # API :8000/docs  ·  dashboard :8501
 ```
 
 Or directly:
@@ -43,7 +53,7 @@ Or directly:
 ```bash
 python -m scripts.run_pipeline --min-year 2018 --max-year 2024
 python -m scripts.run_backtest --holdout 8
-python -m scripts.run_sql src/analytics/growth_analysis.sql --limit 10
+uvicorn src.api.main:app --reload
 ```
 
 ## How ingestion works
@@ -113,6 +123,43 @@ honestly — and explaining *why* — is the intended takeaway. See
 [`docs/model_card.md`](docs/model_card.md). Companion models: an **Isolation Forest**
 anomaly detector (joint behaviour signals) and **K-Means** state segmentation.
 
+## Product layer (Phase 3)
+
+A **FastAPI** service and a **Streamlit** dashboard both sit on one `InsightService`
+(`src/serving/`) — the single source of truth, so API and UI can never disagree.
+See [`docs/architecture.md`](docs/architecture.md) for the full flow.
+
+**API endpoints** (`http://localhost:8000/docs`):
+
+| Endpoint | Returns |
+|---|---|
+| `GET /health`, `/meta` | readiness; warehouse coverage |
+| `GET /kpis/national-trend`, `/category-mix`, `/top-states` | headline KPIs |
+| `GET /growth/leaders`, `/growth/expansion-signals` | growth prioritization |
+| `GET /forecast/next-quarter` | per-state next-quarter forecast (champion + ridge) |
+| `GET /anomalies` | Isolation Forest flags |
+| `GET /segments` | K-Means state archetypes |
+| `GET /states`, `/states/{state}` | list; per-state history |
+
+The **dashboard** renders KPI tiles, the national trend, category mix, top states,
+next-quarter forecasts, growth/expansion tables, anomalies, and segment archetypes —
+charts use a colorblind-safe categorical palette (validated with the dataviz skill).
+
+Both are containerized: `docker compose up --build` runs the pipeline into a shared
+volume, then serves the API (:8000) and dashboard (:8501).
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push / PR:
+
+1. **ruff** lint (real-bug subset + unused imports),
+2. the **full test suite** — fully offline (synthetic fixtures + in-memory DuckDB),
+   so no Pulse data is fetched in CI,
+3. a **Docker image build** to catch packaging breakage.
+
+The ingestion pipeline's data-quality checks also exit non-zero on any FAIL, so the
+warehouse itself is gate-able in a scheduled job.
+
 ## Design choices
 
 - **DuckDB first** — analytical SQL with zero infra; the whole warehouse is one file.
@@ -131,14 +178,21 @@ src/
   analytics/   kpis.sql  growth_analysis.sql  anomaly_queries.sql
   modeling/    features.py  baseline.py  forecast.py  anomaly_detection.py  segmentation.py
   evaluation/  metrics.py  backtest.py
+  serving/     service.py            # InsightService — shared by API & dashboard
+  api/         main.py               # FastAPI app
   config.py
+dashboard/     app.py                # Streamlit + Altair
 scripts/       run_pipeline.py  run_sql.py  run_backtest.py  run_anomaly.py  run_segmentation.py
-tests/         test_parsers.py  test_quality_checks.py  test_features.py  test_metrics.py  test_backtest.py
-docs/          data_dictionary.md  model_card.md
+tests/         test_parsers.py  test_quality_checks.py  test_features.py
+               test_metrics.py  test_backtest.py  test_api.py
+docs/          data_dictionary.md  model_card.md  architecture.md
+.github/workflows/ci.yml             # lint + tests + docker build
+Dockerfile  docker-compose.yml
 reports/       backtest_predictions.csv  anomalies.csv  state_segments.csv  (generated)
 ```
 
-## Roadmap
+## Roadmap / possible extensions
 
-- **Phase 3 — Product**: FastAPI endpoints (forecasts, anomalies, growth leaders) +
-  Streamlit dashboard, Docker, architecture diagram.
+- District- and category-level forecasts; prediction intervals (quantile models).
+- A scheduled job that re-runs ingestion + quality checks when a new quarter lands.
+- Choropleth maps in the dashboard (state/district GeoJSON).

@@ -1,5 +1,6 @@
 .PHONY: help setup pipeline pipeline-full kpis growth anomaly-sql \
-        backtest anomaly segment models test clean
+        backtest anomaly segment models api dashboard lint test \
+        docker-build docker-up docker-down clean
 
 PY := ./.venv/bin/python
 PIP := ./.venv/bin/pip
@@ -39,8 +40,26 @@ segment:  ## Cluster states into behavioural archetypes
 
 models: backtest anomaly segment  ## Run all Phase-2 modeling steps
 
+api:  ## Serve the FastAPI app (http://localhost:8000/docs)
+	$(PY) -m uvicorn src.api.main:app --reload --port 8000
+
+dashboard:  ## Launch the Streamlit dashboard (http://localhost:8501)
+	$(PY) -m streamlit run dashboard/app.py
+
+lint:  ## Lint with ruff (same checks as CI)
+	$(PY) -m ruff check --select E9,F src scripts tests dashboard
+
 test:  ## Run the unit test suite
 	$(PY) -m pytest -q
+
+docker-build:  ## Build the Docker image
+	docker build -t upi-growth-intelligence .
+
+docker-up:  ## Build warehouse + serve API & dashboard via docker compose
+	docker compose up --build
+
+docker-down:  ## Stop the docker compose stack
+	docker compose down
 
 clean:  ## Remove the warehouse (keeps the raw cache)
 	rm -f data/warehouse/*.duckdb data/warehouse/*.wal

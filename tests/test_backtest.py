@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pandas as pd
 
 from src.evaluation.backtest import walk_forward
 from src.modeling import features as F

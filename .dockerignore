@@ -1,0 +1,14 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.git/
+.github/
+data/
+reports/
+*.duckdb
+*.duckdb.wal
+.DS_Store
+docs/
+tests/
