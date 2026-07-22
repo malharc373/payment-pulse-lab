@@ -101,32 +101,51 @@ def cr(x: float) -> float:
 
 
 # --- Guard -------------------------------------------------------------------
-@st.cache_resource(show_spinner="Building the warehouse from PhonePe Pulse (first run only)…")
 def _bootstrap_warehouse() -> bool:
     """On hosts without a pipeline step (e.g. Streamlit Cloud), build on first run
-    when PULSE_AUTO_BUILD=1. Cached so it runs once per container."""
-    import os
-
+    when PULSE_AUTO_BUILD=1. NOT cached: a transient failure (e.g. a GitHub API
+    timeout) must not be memoized — a reload should retry. Once built,
+    ``warehouse_exists()`` short-circuits so no rebuild happens."""
     if warehouse_exists():
         return True
     if os.getenv("PULSE_AUTO_BUILD", "0") in ("1", "true", "True"):
-        from scripts.run_pipeline import main as run_pipeline
+        try:
+            with st.spinner("Building the warehouse from PhonePe Pulse (first run only)…"):
+                from scripts.run_pipeline import main as run_pipeline
 
-        run_pipeline([
-            "--min-year", os.getenv("PULSE_MIN_YEAR", "2020"),
-            "--max-year", os.getenv("PULSE_MAX_YEAR", "2024"),
-        ])
+                run_pipeline([
+                    "--min-year", os.getenv("PULSE_MIN_YEAR", "2020"),
+                    "--max-year", os.getenv("PULSE_MAX_YEAR", "2024"),
+                ])
+        except Exception as exc:  # noqa: BLE001 - surface, don't crash the app
+            st.error(
+                f"Warehouse build failed ({type(exc).__name__}: {exc}). This is "
+                "usually a transient GitHub API timeout — reload to retry. Setting a "
+                "`GITHUB_TOKEN` secret avoids the rate/timeout limits."
+            )
+            return False
     return warehouse_exists()
 
 
 if not _bootstrap_warehouse():
-    st.error(
-        "Warehouse not found. Build it with `make pipeline-full`, or set "
-        "`PULSE_AUTO_BUILD=1` to build automatically on first load."
-    )
+    if os.getenv("PULSE_AUTO_BUILD", "0") not in ("1", "true", "True"):
+        st.error("Warehouse not found. Set `PULSE_AUTO_BUILD=1` to build on first load, "
+                 "or run `make pipeline-full` locally.")
     st.stop()
 
 svc = get_service()
+
+# Guard against a partial deploy (dashboard newer than service) — show a clear
+# message instead of a cryptic AttributeError deep inside a tab.
+_required = ["available_quarters", "state_map_metrics", "forecast_categories", "forecast_districts"]
+_missing = [m for m in _required if not hasattr(svc, m)]
+if _missing:
+    st.error(
+        "App and service are out of sync (service is missing: "
+        f"{', '.join(_missing)}). Push the full commit — every changed file — and reload."
+    )
+    st.stop()
+
 meta = svc.meta()
 
 st.markdown(
