@@ -15,12 +15,19 @@ Directory convention (everything lives under ``data/``)::
 """
 from __future__ import annotations
 
+import json
+import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 import requests
 
 from src import config
+
+# Bundled fallback manifest of all data paths (used when the GitHub API is
+# rate-limited/unreachable — e.g. on Streamlit Cloud's shared IPs).
+MANIFEST_PATH = Path(__file__).resolve().parent / "pulse_manifest.json"
 
 # Path shape: <dataset>/<entity>/.../country/india[/state/<slug>]/<year>/<q>.json
 _LEAF_RE = re.compile(r"(?P<year>\d{4})/(?P<quarter>[1-4])\.json$")
@@ -79,6 +86,42 @@ def _classify(rel_path: str) -> PulseFile | None:
     )
 
 
+def _tree_from_api() -> list[str]:
+    """Fetch the full ``data/...`` path list from the GitHub trees API.
+
+    An optional ``GITHUB_TOKEN`` raises the unauthenticated 60/hr limit to
+    5000/hr — useful on shared hosts (e.g. Streamlit Cloud) whose IPs are often
+    already rate-limited.
+    """
+    headers = {}
+    token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    resp = requests.get(config.PULSE_TREE_API, headers=headers, timeout=config.HTTP_TIMEOUT)
+    resp.raise_for_status()
+    body = resp.json()
+    if body.get("truncated"):
+        raise RuntimeError("Pulse file tree was truncated by the API; narrow the scope.")
+    return [n["path"] for n in body.get("tree", []) if n.get("type") == "blob"]
+
+
+def _tree_from_manifest() -> list[str]:
+    """Fallback path list from the bundled manifest (no network to api.github.com)."""
+    return json.loads(MANIFEST_PATH.read_text())["paths"]
+
+
+def all_paths() -> list[str]:
+    """Full ``data/...`` path list, preferring the live API, falling back to the
+    committed manifest when the API is unreachable or rate-limited."""
+    try:
+        return _tree_from_api()
+    except (requests.RequestException, RuntimeError, ValueError) as exc:
+        if MANIFEST_PATH.exists():
+            print(f"[discover] GitHub API unavailable ({exc}); using bundled manifest.")
+            return _tree_from_manifest()
+        raise
+
+
 def discover_files(
     datasets: tuple[str, ...] = ("aggregated", "map", "top"),
     min_year: int | None = None,
@@ -88,19 +131,8 @@ def discover_files(
     min_year = config.MIN_YEAR if min_year is None else min_year
     max_year = config.MAX_YEAR if max_year is None else max_year
 
-    resp = requests.get(config.PULSE_TREE_API, timeout=config.HTTP_TIMEOUT)
-    resp.raise_for_status()
-    tree = resp.json().get("tree", [])
-    if resp.json().get("truncated"):
-        # Extremely unlikely for this repo, but fail loudly rather than silently
-        # ingesting a partial catalogue.
-        raise RuntimeError("Pulse file tree was truncated by the API; narrow the scope.")
-
     files: list[PulseFile] = []
-    for node in tree:
-        if node.get("type") != "blob":
-            continue
-        path = node.get("path", "")
+    for path in all_paths():
         if not path.startswith("data/") or not path.endswith(".json"):
             continue
         rel = path[len("data/"):]

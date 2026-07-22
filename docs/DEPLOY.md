@@ -37,6 +37,13 @@ env vars to trade coverage for cold-start time.
 On first load the app builds the warehouse from the public Pulse dataset (cached
 for the session). `requirements.txt` is installed automatically.
 
+**File discovery on shared hosts.** Discovery normally uses the GitHub trees API,
+which is rate-limited to 60 requests/hour per IP — and cloud hosts share IPs, so
+it can 403. The pipeline handles this automatically by falling back to a bundled
+manifest (`src/ingestion/pulse_manifest.json`), so builds work without the API.
+To instead use the live API (and auto-discover brand-new quarters), add a
+`GITHUB_TOKEN` secret with a read-only token (raises the limit to 5000/hour).
+
 ## Option D — Fly.io / Cloud Run
 
 Any single-container host works with the same image:
